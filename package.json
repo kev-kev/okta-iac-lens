@@ -1,0 +1,25 @@
+{
+  "name": "okta-iac-lens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first tool that reads Terraform-managed Okta config, visualizes access paths, and measures IaC coverage.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.9.5",
+  "values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "okta_group.engineering",
+          "mode": "managed",
+          "type": "okta_group",
+          "name": "engineering",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "g-eng",
+            "name": "Engineering",
+            "description": "Engineering staff"
+          }
+        },
+        {
+          "address": "okta_group.contractors",
+          "mode": "managed",
+          "type": "okta_group",
+          "name": "contractors",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "g-con",
+            "name": "Contractors",
+            "description": "External contractors"
+          }
+        },
+        {
+          "address": "okta_app_oauth.github",
+          "mode": "managed",
+          "type": "okta_app_oauth",
+          "name": "github",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "a-gh",
+            "label": "GitHub",
+            "name": "oidc_client",
+            "status": "ACTIVE"
+          }
+        },
+        {
+          "address": "okta_app_saml.datadog",
+          "mode": "managed",
+          "type": "okta_app_saml",
+          "name": "datadog",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "a-dd",
+            "label": "Datadog",
+            "name": "datadog_saml",
+            "status": "ACTIVE",
+            "authentication_policy": "p-auth"
+          }
+        },
+        {
+          "address": "okta_app_group_assignment.gh_eng",
+          "mode": "managed",
+          "type": "okta_app_group_assignment",
+          "name": "gh_eng",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "a-gh/g-eng",
+            "app_id": "a-gh",
+            "group_id": "g-eng",
+            "priority": 1
+          }
+        },
+        {
+          "address": "okta_app_group_assignment.dd_eng",
+          "mode": "managed",
+          "type": "okta_app_group_assignment",
+          "name": "dd_eng",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "a-dd/g-eng",
+            "app_id": "a-dd",
+            "group_id": "g-eng",
+            "priority": 1
+          }
+        },
+        {
+          "address": "okta_app_group_assignment.gh_con",
+          "mode": "managed",
+          "type": "okta_app_group_assignment",
+          "name": "gh_con",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "a-gh/g-con",
+            "app_id": "a-gh",
+            "group_id": "g-con",
+            "priority": 2
+          }
+        },
+        {
+          "address": "okta_group_rule.eng_rule",
+          "mode": "managed",
+          "type": "okta_group_rule",
+          "name": "eng_rule",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "gr-eng",
+            "name": "eng-rule",
+            "status": "ACTIVE",
+            "expression_type": "urn:okta:expression:1.0",
+            "expression_value": "user.department==\"Engineering\"",
+            "group_assignments": ["g-eng"]
+          }
+        },
+        {
+          "address": "okta_policy_signon.default_mfa",
+          "mode": "managed",
+          "type": "okta_policy_signon",
+          "name": "default_mfa",
+          "provider_name": "registry.terraform.io/okta/okta",
+          "values": {
+            "id": "p-sess",
+            "name": "Default-MFA",
+            "status": "ACTIVE",
+            "groups_included": ["g-eng"]
+          }
+        }
+      ],
+      "child_modules": [
+        {
+          "address": "module.security",
+          "resources": [
+            {
+              "address": "module.security.okta_app_signon_policy.strict_auth",
+              "mode": "managed",
+              "type": "okta_app_signon_policy",
+              "name": "strict_auth",
+              "provider_name": "registry.terraform.io/okta/okta",
+              "values": {
+                "id": "p-auth",
+                "name": "Strict-Auth"
+              }
+            }
+          ],
+          "child_modules": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+# Dependencies & build output
+node_modules/
+dist/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Terraform state contains secrets + PII. NEVER commit a real tenant export.
+*.tfstate
+*.tfstate.json
+*.tfstate.backup
+
+# ...but the hand-crafted, FAKE-DATA fixture is committed on purpose.
+!fixtures/sample-tenant.tfstate.json
+
+# Generated artifacts (import blocks, exports, etc.)
+generated/
