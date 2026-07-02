@@ -8,6 +8,8 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 
 ## Milestone 3: IaC coverage — reconcile live tenant vs Terraform state
 
+> **Status (2026-07-02): PHASE A COMPLETE (offline).** All build steps shipped and green (45 tests): step-1 facts pinned against okta/okta v4.20.0; contract deltas (`groupType`/`system` on `ParsedResource`, plural `okta_app_group_assignments` parsing, the `_embedded.resourceType` app-auth guard) with zero graph-layer changes; pure `computeCoverage` classifier and `import-blocks` generator; and the `coverage` CLI (text/JSON, `--imports`, loud missing-creds error). No live network call made. **Phase B (live ground truth) is the remaining work.** PR open for Phase A.
+
 **Goal:** a `coverage` CLI command that reads BOTH inputs — the live tenant (M2 reader) and a `terraform show -json` export (M1 parser) — and answers CLAUDE.md's second differentiated capability: how much of the org is under IaC, what exactly isn't, and ready-to-paste Terraform `import` blocks for the gap. New logic lives in `src/analysis/` (pure, same rule as core) plus a thin CLI/render surface.
 
 **The load-bearing design decision:** the diff operates on `ParsedResource[]` — the same normalized seam both inputs already emit. `computeCoverage(live, state)` is a pure set comparison joined on Okta `id` (composite `(appId, groupId)` for assignments; ids are identical across the two paths by M2's design). If coverage needs a parallel model or reaches back into raw API/tfstate shapes, that's the M2 design smell again — stop and reconsider.
