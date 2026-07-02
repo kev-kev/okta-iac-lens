@@ -50,21 +50,39 @@ Ordering is load-bearing: evaluating exclusion before state-presence would misfi
 
 1. **Pin the facts.** (a) Skim every file in `generated/okta-captures/` for exclusion-rule surprises beyond the drafted rules. (b) From the registry docs for the pinned provider (`okta/okta ~> 4.0`), confirm and record here: the import ID format per resource type (table below) and the state shape of `okta_app_group_assignments` (`app_id` + `group[]` blocks). CLAUDE.md rule applies: registry docs win over any list, including this one.
 
-   | resource | import id (to confirm) |
+   | resource | import id (confirmed v4.20.0) |
    |---|---|
    | `okta_group` | `<group id>` |
    | `okta_app_oauth` / `okta_app_saml` / other `okta_app_*` | `<app id>` |
    | `okta_group_rule` | `<rule id>` |
    | `okta_policy_signon` | `<policy id>` |
    | `okta_app_signon_policy` | `<policy id>` |
-   | `okta_app_group_assignment` | `<app id>/<group id>` |
+   | `okta_app_group_assignment` (singular) | `<app id>/<group id>` |
+   | `okta_app_group_assignments` (plural) | `<app id>` (imports ALL group blocks) |
+
+### Step 1 findings — facts pinned (recorded 2026-07-02)
+
+**Provider version.** Latest 4.x is **4.20.0** (Terraform Registry versions API); the current major line is 6.13.0. Per CLAUDE.md, v4.20.0 docs are the source of truth — NOT "latest" (6.x docs would be the cross-major trap). All import/shape facts below are quoted from the okta/okta **v4.20.0** resource docs.
+
+**Import IDs — every drafted row CONFIRMED verbatim** (see the table above; `terraform import <resource>.example <id>` for each). Added the plural resource: `okta_app_group_assignments` imports by **`<app_id>`** and pulls in ALL of that app's group blocks. Consequence for step 4: import-block generation for assignment GAPS must target the **singular** `okta_app_group_assignment` (one `import{}` per (app,group) pair, id `<app_id>/<group_id>`) — the plural granularity is wrong for a per-pair gap. Step 4 already specifies the singular form; confirmed correct.
+
+**Plural `okta_app_group_assignments` state shape CONFIRMED (v4.20.0).** Top-level `app_id` (string) + a `group` **block list**; each `group` block = `id` (string, required — the group id), `priority` (number, optional), `profile` (string JSON, optional). In `terraform show -json`, `values.group` is an array. Step-2 parser: emit one `AppGroupAssignment` per `(values.app_id, values.group[i].id)`. (Contrast the singular resource: flat `values.app_id` + `values.group_id`.)
+
+**Exclusion predicates CONFIRMED against `generated/okta-captures/`**, with exact live enumeration:
+- **Groups (4):** Contractors + Engineering (`OKTA_GROUP`); Everyone + Okta Administrators (`BUILT_IN`). No `APP_GROUP` present. `type !== "OKTA_GROUP"` excludes the 2 BUILT_IN. NB `objectClass` is `["okta:user_group"]` for ALL four incl. BUILT_IN — `type` is the only correct discriminator, not `objectClass`.
+- **OKTA_SIGN_ON policies (2):** Default-MFA (`system:false`, custom → managed); Default Policy (`system:true`, applies to Everyone, priority 2 → excluded). `exclude system:true` confirmed.
+- **ACCESS_POLICY policies (7):** "Any two factors" (`system:true`, org default — GitHub points here → mapper nulls it, emits no node); Strict-Auth (`system:false`, custom — Datadog points here → managed); and **exactly 5** Okta-created `system:false` policies referenced by no visible app → excluded: Okta Admin Console, Okta Dashboard, Okta Browser Plugin, Okta Account Management Policy, Okta OIN Submission Tester. The drafted "~5 console policies" is precisely 5.
+
+**Surprise #1 (flag for checkpoint decision).** "Okta Account Management Policy" comes back from `type=ACCESS_POLICY` but carries `_embedded.resourceType: "END_USER_ACCOUNT_MANAGEMENT"` — it is NOT an app sign-on policy (it governs authenticator enrollment / password reset / unlock). The drafted "unattached to any visible app" predicate already excludes it correctly (no app references it), so coverage is right WITHOUT special-casing. Open question: also filter `AppAuthPolicy` emission/counting on `_embedded.resourceType === "APP"` for semantic precision (and cleaner live summaries)? That needs `_embedded.resourceType` added to `RawPolicy` (not captured today). **DECIDED (checkpoint 2026-07-02): add the resourceType guard in `map-api.ts`** — emit `AppAuthPolicy` only when `_embedded.resourceType === "APP"`, treating a MISSING `resourceType` as APP (back-compat with the doc-derived fixtures, which omit `_embedded`). The unattached predicate stays the coverage mechanism; the guard just keeps non-app access policies (END_USER_ACCOUNT_MANAGEMENT etc.) out of the node set and live summaries. Needs `_embedded?: { resourceType?: string }` on `RawPolicy`.
+
+**Surprise #2 (minor, no action).** Apps carry `_links.profileEnrollment` (a `PROFILE_ENROLLMENT` policy) alongside `_links.accessPolicy`. The reader queries only `type=ACCESS_POLICY` + `type=OKTA_SIGN_ON` and the mapper reads only `accessPolicy`, so profile-enrollment policies never enter the dataset. Pinned here so the extra link isn't mistaken for a gap later.
 
 --- CHECKPOINT: review the confirmed exclusion rules + import-id formats with me before implementing. ---
 
 2. **Contract deltas — the one sanctioned touch to existing modules, additive only.** Coverage needs two flags that die before reaching `ParsedResource` today:
    - `parse-tfstate.ts`: add optional `groupType?: string` (Group) and `system?: boolean` (GlobalSessionPolicy) to the union — the tfstate parser leaves both unset (state contents are definitionally customer-managed). Implement the plural-assignments case (replacing the `return null`).
-   - `okta-api.ts`: add `type?: string` to `RawGroup` (live-verified values: `OKTA_GROUP` / `BUILT_IN` / `APP_GROUP`).
-   - `map-api.ts`: populate both new fields. No M2 test breaks: `test/map-api.test.ts` compares at the graph level (`comparable()` strips these fields; `build-graph.ts` never puts them on nodes) and otherwise via `toMatchObject` (partial), and the tfstate path leaves them unset — so the API-vs-tfstate equivalence stays green with no edit.
+   - `okta-api.ts`: add `type?: string` to `RawGroup` (live-verified values: `OKTA_GROUP` / `BUILT_IN` / `APP_GROUP`) and `_embedded?: { resourceType?: string }` to `RawPolicy` (the Surprise-#1 guard).
+   - `map-api.ts`: populate both new fields, and gate `AppAuthPolicy` emission on `_embedded.resourceType === "APP"` (missing == APP, so the doc-derived M2 fixtures still emit Strict-Auth). No M2 test breaks: `test/map-api.test.ts` compares at the graph level (`comparable()` strips these fields; `build-graph.ts` never puts them on nodes) and otherwise via `toMatchObject` (partial), and the tfstate path leaves them unset — so the API-vs-tfstate equivalence stays green with no edit.
    - `model.ts` / `build-graph.ts` / `access-paths.ts`: ZERO changes — the new fields never reach graph nodes. If they need to, that's the smell; stop.
 3. **`src/analysis/coverage.ts` — pure classifier.** `computeCoverage(live: ParsedResource[], state: ParsedResource[]): CoverageReport` implementing the table above. No I/O, no network — the architecture principle extends to `src/analysis/`.
 4. **`src/analysis/import-blocks.ts` — pure generator.** (CLAUDE.md's structure lists only `coverage.ts`; splitting TF-block rendering out from classification is a deliberate extension of that illustrative layout — both modules stay pure.) Unmanaged records -> Terraform 1.5+ `import` blocks. Resource type comes off the record (`App.appType` is already the TF type on both paths); label = sanitized display name (lowercase, `[^a-z0-9_]` -> `_`, prefix if digit-leading, dedupe collisions); assignments labeled `<app>_<group>` with id `<appId>/<groupId>` (names resolved from the live Group/App records). An app whose `appType` is `okta_app_unknown:<mode>` gets a commented-out block naming the unmapped mode — never a guessed type.
