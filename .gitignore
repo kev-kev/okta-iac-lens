@@ -17,3 +17,8 @@ dist/
 
 # Generated artifacts (import blocks, exports, etc.)
 generated/
+
+# Terraform working-dir artifacts (provider binaries, local state, plan cache)
+.terraform/
+.terraform.lock.hcl
+*.tfplan
