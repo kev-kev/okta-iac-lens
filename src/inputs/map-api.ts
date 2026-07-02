@@ -64,6 +64,7 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       id: g.id,
       name: g.profile?.name ?? "",
       address: `okta-api:group/${g.id}`,
+      groupType: g.type,
     });
   }
 
@@ -99,11 +100,17 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       name: policy.name,
       address: `okta-api:policy_signon/${policy.id}`,
       groupsIncluded: policy.conditions?.people?.groups?.include ?? [],
+      system: policy.system === true,
     });
   }
 
   for (const policy of snapshot.appAuthPolicies) {
     if (policy.system === true) continue; // org-default machinery, not managed config
+    // Only APP-typed access policies are app sign-on policies; a non-APP resourceType
+    // (e.g. END_USER_ACCOUNT_MANAGEMENT) is not one. Missing == APP, so the doc-derived
+    // M2 fixtures (which omit `_embedded`) still emit their app policies.
+    const resourceType = policy._embedded?.resourceType;
+    if (resourceType != null && resourceType !== "APP") continue;
     out.push({
       kind: "AppAuthPolicy",
       id: policy.id,
