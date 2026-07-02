@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npm --version)",
-      "Bash(node -e \"const d=require\\('./fixtures/sample-tenant.tfstate.json'\\); const r=d.values.root_module.resources; const c={}; for\\(const x of r\\){c[x.type]=\\(c[x.type]||0\\)+1;} console.log\\('valid JSON, resource counts by type:'\\); console.log\\(JSON.stringify\\(c,null,2\\)\\);\")",
-      "Bash(npm run *)"
-    ]
-  }
-}
