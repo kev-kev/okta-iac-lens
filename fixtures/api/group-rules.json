@@ -1,0 +1,19 @@
+[
+  {
+    "id": "gr-eng",
+    "type": "group_rule",
+    "name": "eng-rule",
+    "status": "ACTIVE",
+    "conditions": {
+      "expression": {
+        "type": "urn:okta:expression:1.0",
+        "value": "user.department==\"Engineering\""
+      }
+    },
+    "actions": {
+      "assignUserToGroups": {
+        "groupIds": ["g-eng"]
+      }
+    }
+  }
+]

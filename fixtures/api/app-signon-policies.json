@@ -1,0 +1,16 @@
+[
+  {
+    "id": "p-default",
+    "type": "ACCESS_POLICY",
+    "name": "Any two factors",
+    "status": "ACTIVE",
+    "system": true
+  },
+  {
+    "id": "p-auth",
+    "type": "ACCESS_POLICY",
+    "name": "Strict-Auth",
+    "status": "ACTIVE",
+    "system": false
+  }
+]

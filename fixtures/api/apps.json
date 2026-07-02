@@ -1,0 +1,30 @@
+[
+  {
+    "id": "a-gh",
+    "name": "oidc_client",
+    "label": "GitHub",
+    "status": "ACTIVE",
+    "signOnMode": "OPENID_CONNECT",
+    "created": "2024-01-01T00:00:00.000Z",
+    "lastUpdated": "2024-01-01T00:00:00.000Z",
+    "_links": {
+      "accessPolicy": {
+        "href": "https://your-org.okta.com/api/v1/policies/p-default"
+      }
+    }
+  },
+  {
+    "id": "a-dd",
+    "name": "datadog_saml",
+    "label": "Datadog",
+    "status": "ACTIVE",
+    "signOnMode": "SAML_2_0",
+    "created": "2024-01-01T00:00:00.000Z",
+    "lastUpdated": "2024-01-01T00:00:00.000Z",
+    "_links": {
+      "accessPolicy": {
+        "href": "https://your-org.okta.com/api/v1/policies/p-auth"
+      }
+    }
+  }
+]

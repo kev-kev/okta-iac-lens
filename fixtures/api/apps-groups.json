@@ -1,0 +1,9 @@
+{
+  "a-gh": [
+    { "id": "g-eng", "lastUpdated": "2024-01-01T00:00:00.000Z", "priority": 0 },
+    { "id": "g-con", "lastUpdated": "2024-01-01T00:00:00.000Z", "priority": 1 }
+  ],
+  "a-dd": [
+    { "id": "g-eng", "lastUpdated": "2024-01-01T00:00:00.000Z", "priority": 0 }
+  ]
+}

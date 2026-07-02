@@ -1,0 +1,16 @@
+[
+  {
+    "id": "p-sess",
+    "type": "OKTA_SIGN_ON",
+    "name": "Default-MFA",
+    "status": "ACTIVE",
+    "system": false,
+    "conditions": {
+      "people": {
+        "groups": {
+          "include": ["g-eng"]
+        }
+      }
+    }
+  }
+]

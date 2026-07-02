@@ -119,7 +119,7 @@ Unit tests against fixtures prove the parser and graph logic. The **real** accep
 
 - `.gitignore` must exclude `.env`, `*.tfstate`, and any real `*-tenant.tfstate.json` exports. State contains secrets and PII.
 - `.env.example` holds placeholder keys only.
-- All Okta API work (M2+) uses **read-only** scopes (`okta.groups.read`, `okta.apps.read`, `okta.policies.read`) against the **free Integrator tenant**, never production.
+- All Okta API work (M2+) is **read-only**, against the **free Integrator tenant**, never production. Enforced at the credential, not just in code: the SSWS API token is minted by a **Read-Only Administrator** user (SSWS tokens can't be scope-limited — they inherit their creator's permissions; the OAuth scopes `okta.groups.read`/`okta.apps.read`/`okta.policies.read` apply only if we later switch to an OAuth service app). Verify with `npm run smoke -- --verify-readonly`: the write probe must get a 403.
 - Credentials live in env vars only. Never hardcode, never commit.
 
 ## Scope discipline

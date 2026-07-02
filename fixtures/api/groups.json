@@ -1,0 +1,26 @@
+[
+  {
+    "id": "g-eng",
+    "created": "2024-01-01T00:00:00.000Z",
+    "lastUpdated": "2024-01-01T00:00:00.000Z",
+    "lastMembershipUpdated": "2024-01-01T00:00:00.000Z",
+    "objectClass": ["okta:user_group"],
+    "type": "OKTA_GROUP",
+    "profile": {
+      "name": "Engineering",
+      "description": "Engineering team"
+    }
+  },
+  {
+    "id": "g-con",
+    "created": "2024-01-01T00:00:00.000Z",
+    "lastUpdated": "2024-01-01T00:00:00.000Z",
+    "lastMembershipUpdated": "2024-01-01T00:00:00.000Z",
+    "objectClass": ["okta:user_group"],
+    "type": "OKTA_GROUP",
+    "profile": {
+      "name": "Contractors",
+      "description": "External contractors"
+    }
+  }
+]
