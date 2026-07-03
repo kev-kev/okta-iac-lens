@@ -85,11 +85,12 @@ The `graph` value is the untransformed `OktaGraph`. Edges carry no ids in the mo
 
 ## Phase B — ground truth + demo polish (small; live read runs on Opus per the session note)
 
-- [ ] `export --source okta -o generated/live-graph.json` (read-only, Integrator tenant) and load it in the viewer.
-- [ ] **Manual acceptance checklist (mirrors M2's ground truth):** clicking Engineering shows GitHub + Datadog; Datadog badges Strict-Auth; GitHub badges "org default app policy"; Default-MFA links to Engineering; the two policy layers are visually distinct at a glance; the Okta built-ins that appear live (Everyone, Okta Administrators, console policies are NOT in the graph — they were never graph nodes) render sensibly.
-- [ ] Screenshot the Engineering trace -> `README.md` demo section.
-- [ ] **CI (the distribution slice):** GitHub Actions workflow running `npm test` + `npm run web:build` on PRs to main.
-- [ ] Record any browser/bundling quirks discovered (e.g. anything in core that turned out not to be browser-safe) here.
+- [x] `export --source okta -o generated/live-graph.json` (read-only, Integrator tenant) — DONE. 14 nodes / 7 edges. `deriveCards` verified against the live export (data ground truth, matches the M3 console check): Engineering→Default-MFA, Everyone→Default Policy, Contractors/Okta Administrators→(none); Datadog→Strict-Auth, GitHub→org default. The 4 Okta-created console app-auth policies attach to no visible app and drop out of the viewer (the same noise M3 excluded — intended under attribute encoding).
+- [ ] **Manual acceptance checklist (visual; reworded for the badge design):** load `generated/live-graph.json`; the flow lays out rule→group→app with **no edge crossing a card**; Engineering's **Session policy** badge = Default-MFA, Datadog's **Auth policy** badge = Strict-Auth, GitHub's = "org default"; the two badge layers read as distinct (amber session vs red auth); clicking **Engineering** highlights GitHub + Datadog; clicking a **policy badge** highlights every card it governs; built-in groups (Everyone, Okta Administrators) render sensibly.
+- [ ] Screenshot the viewer → `docs/viewer.png` (referenced by `README.md`). *(Needs a browser — capture during the visual check above.)*
+- [x] **CI (the distribution slice):** `.github/workflows/ci.yml` runs root `tsc`, `web:typecheck`, `npm test`, and `web:build` on PRs/pushes to main.
+- [x] **Recorded quirks:** (1) core is browser-safe as assumed — no Node built-ins reached the bundle. (2) Under attribute encoding, a policy attached to no *visible* resource is invisible in the viewer (the 4 Okta console app policies) — intended, mirrors M3 coverage exclusion; if a real orphaned custom policy ever needs surfacing, that's a viewer feature, not a bug. Add any browser quirks found during the visual check.
+- [ ] **Final M4 step — comprehensive security review (before the PR).** Run once the viewer is visually signed off: the new dependency/supply-chain surface (React/React Flow/dagre/Vite), the viewer's untrusted-JSON input path (`parseEnvelope`), browser rendering of tenant-derived strings (no `dangerouslySetInnerHTML`/`eval`; static, no network), a **git-history secret/PII scan**, and credential handling across M2/M3. Broader than the branch-diff `/security-review` skill — run it as a full-project pass.
 
 ## Backlog — "Recommended steps to increase IaC coverage" (feature request 2026-07-03)
 
