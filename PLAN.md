@@ -87,9 +87,22 @@ The `graph` value is the untransformed `OktaGraph`. Edges carry no ids in the mo
 - [ ] **CI (the distribution slice):** GitHub Actions workflow running `npm test` + `npm run web:build` on PRs to main.
 - [ ] Record any browser/bundling quirks discovered (e.g. anything in core that turned out not to be browser-safe) here.
 
+## Backlog — "Recommended steps to increase IaC coverage" (feature request 2026-07-03)
+
+Surfaced right next to the coverage % — in the CLI `coverage` output now, and in the M5 viewer coverage overlay later — a short, prioritized, plain-language list of what the user can do to bring more of their Okta under Terraform. (Not an M4 item; recorded here so it survives the M4→M5 plan rewrite. Scoping calls below are mine — adjust when we pick it up.)
+
+- **Pure and derived, never hardcoded.** New pure module `src/analysis/recommendations.ts`: `recommend(report: CoverageReport): Recommendation[]`. Every suggestion is computed from the coverage buckets, so it can't drift from the actual tenant state and unit-tests against the same oracle fixtures as `coverage`. Same purity rail as the rest of `src/analysis`.
+- **Content, ordered by impact:**
+  - `unmanaged > 0` → the headline action: "Bring N resources under IaC," broken down by kind, with the exact path (`coverage --imports <file>` → add the generated blocks → `terraform plan` to import). Prioritize kinds by count / lowest per-kind coverage.
+  - `stale > 0` → "N resources are in Terraform but not the tenant — remove them from config, or investigate drift."
+  - `excluded` → informational: "N resources are Okta-managed (built-ins/system) and can't be Terraformed; they're excluded from the %, not a gap."
+  - 100% managed → positive confirmation, plus optional next-level nudges.
+- **Rendered** in the CLI coverage text/JSON, and (M5) as a panel beside the viewer's coverage overlay — the two pair naturally, so this is a strong M5 companion to that overlay.
+- **Rail:** guidance only. It never mutates Okta and never writes config on its own; the human still runs `terraform`. Read-only discipline holds.
+
 ## Deferred (do NOT build in M4)
 
-- **Coverage overlay in the viewer** (managed/unmanaged/excluded badges) — the natural M5, pulling M3's report into the same canvas.
+- **Coverage overlay in the viewer** (managed/unmanaged/excluded badges) — the natural M5, pulling M3's report into the same canvas; pairs with the recommended-steps panel above.
 - `serve` command / live mode in the browser; any viewer network I/O.
 - Plan-diff view (`terraform plan -json`) — sequenced after viz on purpose; it lands as a before/after view in this viewer.
 - Auto-layout libraries; large-tenant performance work (virtualization, clustering).
