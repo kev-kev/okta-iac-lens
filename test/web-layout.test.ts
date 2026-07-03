@@ -25,11 +25,12 @@ describe("layoutGraph", () => {
   it("puts each kind in its own column (Groups share x, Apps share x, columns ordered)", () => {
     expect(xOf("g-eng")).toBe(xOf("g-con"));
     expect(xOf("a-gh")).toBe(xOf("a-dd"));
-    // GroupRule < GlobalSessionPolicy < Group < App < AppAuthPolicy
+    // GroupRule < GlobalSessionPolicy < Group < AppAuthPolicy < App
+    // (each policy column sits left/upstream of what it gates, so all edges flow forward)
     expect(xOf("gr-eng")).toBeLessThan(xOf("p-sess"));
     expect(xOf("p-sess")).toBeLessThan(xOf("g-eng"));
-    expect(xOf("g-eng")).toBeLessThan(xOf("a-gh"));
-    expect(xOf("a-gh")).toBeLessThan(xOf("p-auth"));
+    expect(xOf("g-eng")).toBeLessThan(xOf("p-auth"));
+    expect(xOf("p-auth")).toBeLessThan(xOf("a-gh"));
   });
 
   it("never places two nodes at the same coordinates", () => {

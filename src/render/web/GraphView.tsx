@@ -22,11 +22,19 @@ export interface GraphViewProps {
   graph: OktaGraph;
   /** When set, nodes/edges in the set are emphasized and the rest dimmed. null/undefined = no trace. */
   highlight?: HighlightSet | null;
+  /** Show the per-edge kind labels ("grants", "protects", …). Default true. */
+  showLabels?: boolean;
   onNodeClick?: (nodeId: string) => void;
   onPaneClick?: () => void;
 }
 
-export function GraphView({ graph, highlight, onNodeClick, onPaneClick }: GraphViewProps) {
+export function GraphView({
+  graph,
+  highlight,
+  showLabels = true,
+  onNodeClick,
+  onPaneClick,
+}: GraphViewProps) {
   const positions = useMemo(() => layoutGraph(graph), [graph]);
 
   const nodes: OktaFlowNode[] = useMemo(
@@ -49,22 +57,33 @@ export function GraphView({ graph, highlight, onNodeClick, onPaneClick }: GraphV
       graph.edges.map((e) => {
         const id = edgeId(e);
         const active = highlight ? highlight.edgeIds.has(id) : undefined;
+        const dim = active === false;
         return {
           id,
           source: e.from,
           target: e.to,
-          label: e.kind,
+          label: showLabels ? e.kind : undefined,
           animated: active === true,
           style: {
             stroke: EDGE_COLOR[e.kind],
             strokeWidth: active === true ? 2.5 : 1.5,
             strokeDasharray: e.kind === "populates" ? "6 4" : undefined,
-            opacity: active === false ? 0.12 : 1,
+            opacity: dim ? 0.12 : 1,
           },
-          labelStyle: { fill: EDGE_COLOR[e.kind], fontSize: 11 },
+          // Dim the label bubble in lockstep with its edge, so an out-of-flow label
+          // (e.g. Contractors' unrelated `populates`) recedes instead of floating on top.
+          labelStyle: { fill: EDGE_COLOR[e.kind], fontSize: 11, opacity: dim ? 0.15 : 1 },
+          labelBgStyle: {
+            fill: "#0b1220",
+            fillOpacity: dim ? 0.1 : 0.85,
+            stroke: EDGE_COLOR[e.kind],
+            strokeOpacity: dim ? 0.1 : 0.5,
+          },
+          labelBgPadding: [6, 3] as [number, number],
+          labelBgBorderRadius: 6,
         };
       }),
-    [graph, highlight],
+    [graph, highlight, showLabels],
   );
 
   return (
@@ -74,6 +93,7 @@ export function GraphView({ graph, highlight, onNodeClick, onPaneClick }: GraphV
         edges={edges}
         nodeTypes={nodeTypes}
         fitView
+        panOnScroll
         onNodeClick={(_event, node) => onNodeClick?.(node.id)}
         onPaneClick={() => onPaneClick?.()}
       >

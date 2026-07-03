@@ -12,6 +12,7 @@ export function App() {
   const [envelope, setEnvelope] = useState<GraphEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [showLabels, setShowLabels] = useState(true);
 
   const load = useCallback(async (file: File) => {
     try {
@@ -83,10 +84,20 @@ export function App() {
           />
         </label>
         {envelope && (
-          <span className="meta">
-            source: {envelope.source} · {envelope.graph.nodes.length} nodes ·{" "}
-            {envelope.graph.edges.length} edges · click a group to trace
-          </span>
+          <>
+            <span className="meta">
+              source: {envelope.source} · {envelope.graph.nodes.length} nodes ·{" "}
+              {envelope.graph.edges.length} edges · click a group to trace
+            </span>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={showLabels}
+                onChange={(e) => setShowLabels(e.target.checked)}
+              />
+              Edge labels
+            </label>
+          </>
         )}
       </header>
 
@@ -97,6 +108,7 @@ export function App() {
           <GraphView
             graph={graph}
             highlight={highlight}
+            showLabels={showLabels}
             onNodeClick={onNodeClick}
             onPaneClick={() => setSelectedGroupId(null)}
           />

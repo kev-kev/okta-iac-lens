@@ -70,6 +70,20 @@ body {
   color: var(--muted);
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.toggle input {
+  cursor: pointer;
+}
+
 .error-banner {
   padding: 10px 16px;
   background: #7f1d1d;

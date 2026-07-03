@@ -3,11 +3,12 @@
  * layout library (rail: fixture-scale only; auto-layout deferred until a real tenant needs it).
  *
  * Columns left -> right follow the access flow:
- *   GroupRule -> GlobalSessionPolicy -> Group -> App -> AppAuthPolicy
+ *   GroupRule -> GlobalSessionPolicy -> Group -> AppAuthPolicy -> App
  * i.e. a rule populates a group, a session policy applies to a group, a group grants an app,
- * an app is protected by an app policy. Session policies flank groups on the left; app
- * policies flank apps on the right — the two policy layers sit on opposite sides, reinforcing
- * that they are different things.
+ * an app is protected by an app policy. Each policy column sits immediately UPSTREAM (left) of
+ * what it gates, so every edge (populates/appliesTo/grants/protects) flows left->right with no
+ * reversal — that keeps edge lines clean (no U-turn hooks). The two policy layers stay distinct
+ * by color/label/legend, not by which side they're on.
  */
 
 import type { GraphNode, NodeKind, OktaGraph } from "../../core/model.js";
@@ -22,8 +23,8 @@ const COLUMN: Record<NodeKind, number> = {
   GroupRule: 0,
   GlobalSessionPolicy: 1,
   Group: 2,
-  App: 3,
-  AppAuthPolicy: 4,
+  AppAuthPolicy: 3,
+  App: 4,
 };
 
 const COLUMN_WIDTH = 260;
