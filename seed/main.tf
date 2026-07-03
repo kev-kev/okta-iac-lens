@@ -3,10 +3,13 @@
 # export deferred from M1.
 #
 # NOTE: this WRITES to the tenant, so it needs a WRITE-capable token — NOT the
-# read-only token the tool uses. Run it with your super-admin token in the env:
+# read-only token the tool uses. All connection settings come from the environment
+# (nothing tenant-specific is committed); run it like:
 #
 #   cd seed
-#   export OKTA_API_TOKEN=<super-admin write token>   # do NOT put this in the repo .env
+#   export OKTA_ORG_NAME=<your subdomain>            # e.g. integrator-123456
+#   export OKTA_BASE_URL=okta.com
+#   export OKTA_API_TOKEN=<super-admin write token>  # do NOT put this in the repo .env
 #   terraform init && terraform apply
 #   terraform show -json > ../fixtures/real-tenant.tfstate.json   # gitignored
 #
@@ -23,9 +26,9 @@ terraform {
 }
 
 provider "okta" {
-  org_name = "integrator-1546176" # your subdomain (the part before .okta.com)
-  base_url = "okta.com"
-  # api_token is read from the OKTA_API_TOKEN env var automatically.
+  # org_name, base_url, and api_token are all sourced from the environment
+  # (OKTA_ORG_NAME / OKTA_BASE_URL / OKTA_API_TOKEN — confirmed against provider v4.20.0
+  # docs). Nothing tenant-specific is hardcoded here. See the header for the exports.
 }
 
 # --- Groups ------------------------------------------------------------------
