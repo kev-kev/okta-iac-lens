@@ -1,127 +1,120 @@
 # PLAN.md — current milestone
 
-Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 3 ships, rewrite this for M4.
+Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 4 ships, rewrite this for M5.
 
 > **Status of M1 (shipped):** `terraform show -json` -> `ParsedResource[]` -> `OktaGraph` -> `trace()`/`summary`, tested against `fixtures/sample-tenant.tfstate.json`.
 >
-> **Status of M2 (shipped, merged to main):** live read-only reader (`HttpOktaReader` + pure `mapApiSnapshot`) emits the same `ParsedResource[]`; API-vs-tfstate graph equivalence proven offline; ground-truth acceptance vs the admin console passed on the seeded Integrator tenant (`seed/main.tf`, provider pinned `okta/okta ~> 4.0`). Read-only rail verified live: write probe 403s.
-
-## Milestone 3: IaC coverage — reconcile live tenant vs Terraform state
-
-> **Status (2026-07-02): MILESTONE 3 COMPLETE.** Phase A shipped and green (45 tests): step-1 facts pinned against okta/okta v4.20.0; contract deltas (`groupType`/`system` on `ParsedResource`, plural `okta_app_group_assignments` parsing, the `_embedded.resourceType` app-auth guard) with zero graph-layer changes; pure `computeCoverage` classifier and `import-blocks` generator; and the `coverage` CLI (text/JSON, `--imports`, loud missing-creds error).
+> **Status of M2 (shipped):** live read-only reader emits the same `ParsedResource[]`; API-vs-tfstate graph equivalence proven offline; ground-truth acceptance vs the admin console passed on the seeded Integrator tenant. Read-only rail verified live (write probe 403s).
 >
-> **Phase B (live ground truth) PASSED** against the seeded Integrator tenant. Real state exported (`terraform show -json` → `generated/seed-state.json`, gitignored; also closes the real-export loop M1 deferred — parses to 10 records). Baseline coverage = **10/10 = 100%**, 0 gap/stale, excluded = exactly the 7 Okta built-ins (2 BUILT_IN groups, Default Policy, 4 Okta-created app access policies — note the non-app "Account Management Policy" is correctly absent, validating the Surprise-#1 `resourceType` guard live). Click-ops gap (1 group + 1 GitHub assignment created in the console) surfaced as **exactly** 2 unmanaged → 10/12 = 83.3%, with correct import blocks (singular `okta_app_group_assignment`, composite id). Those blocks proved out under real Terraform: `terraform plan` → **`Plan: 2 to import, 0 to add, 0 to change, 0 to destroy`**. Deleting the group restored **10/10 = 100%**. Tool output matched the tenant on every point. **Only the free Integrator test tenant, read-only; `plan` never mutated state.** PR open.
+> **Status of M3 (shipped):** `coverage` command reconciles live tenant vs state over the shared `ParsedResource[]` seam (presence-first classification), generates import blocks confirmed against okta/okta v4.20.0. Ground truth passed live: baseline 10/10 = 100%; a click-ops gap surfaced as exactly 2 unmanaged; generated blocks proved out with `terraform plan: 2 to import, 0 to change`; restore returned to 100%.
 
-**Goal:** a `coverage` CLI command that reads BOTH inputs — the live tenant (M2 reader) and a `terraform show -json` export (M1 parser) — and answers CLAUDE.md's second differentiated capability: how much of the org is under IaC, what exactly isn't, and ready-to-paste Terraform `import` blocks for the gap. New logic lives in `src/analysis/` (pure, same rule as core) plus a thin CLI/render surface.
+## Milestone 4: web visualization of access paths
 
-**The load-bearing design decision:** the diff operates on `ParsedResource[]` — the same normalized seam both inputs already emit. `computeCoverage(live, state)` is a pure set comparison joined on Okta `id` (composite `(appId, groupId)` for assignments; ids are identical across the two paths by M2's design). If coverage needs a parallel model or reaches back into raw API/tfstate shapes, that's the M2 design smell again — stop and reconsider.
+> **Design revision (2026-07-03, mid-Phase-A, from hands-on review).** Two changes to the original plan below, made because the hand-rolled layout produced edges running through cards and the policy-node encoding was the root cause:
+> 1. **Layout: adopted dagre** (`@dagrejs/dagre` 3.0.0, MIT) for layered left-to-right layout. The "auto-layout deferred" rail below is lifted — the simple layout became unusable at fixture scale (edge-through-node), which was the stated trigger. `layout.ts` is now a thin dagre wrapper.
+> 2. **Policies are card ATTRIBUTES, not nodes.** `deriveCards()` (pure) splits the graph into a flow-only DAG (rule/group/app) plus policy-as-attribute maps; each group card shows its Session policy, each app card its Auth policy. This is the relational-vs-attribute-encoding call (Munzner): the flow is the relationship we analyze (edges), policies are properties (badges). Sharing is recovered on demand — clicking a policy badge highlights every resource it governs (`highlightForPolicy` + `PolicyPanel`). The two-layer distinctness and org-default rules below are UNCHANGED and still enforced (amber session badge vs red auth badge; "org default" never blank). Where the steps below say "policy nodes / distinct edge styling for appliesTo vs protects," read "distinct policy BADGES"; `appliesTo`/`protects` no longer appear as drawn edges.
+
+**Goal:** the "visualizes access paths" promise from the project's own description, in pixels. A **local-first, fully static** web viewer (Vite + React Flow, in `src/render/web/`) that loads a graph exported by a new `export` CLI command and renders the access graph with the **two policy layers visually distinct**; clicking a group highlights its full trace (apps + both policy layers), matching CLI `trace` semantics exactly. No server, no credentials near the browser, no live calls from the viewer — it opens a JSON file.
+
+**The load-bearing design decision:** the viewer imports the SAME pure core the CLI uses. `src/core/` is pure ESM with zero Node-only imports, so `trace()`/`summarize()` run in the browser via Vite unchanged; the interchange format is the serialized `OktaGraph` (already plain arrays by design — model.ts built it to be snapshotted). **No traversal logic is reimplemented in UI code.** If the viewer needs a computation core doesn't provide, add it as a pure function and test it against fixtures — never fork semantics into a component. A viewer-side "parallel trace" is the M2 design smell wearing a new hat; stop and reconsider.
 
 **Scope rails:**
 
-- **Presence/absence only.** A resource is managed, unmanaged, or stale. Attribute-level drift (exists in both, differs inside) is NOT M3.
-- **Read-only against Okta, as always.** The tool only reads. `terraform plan`/`apply` in Phase B is the human's seed workflow, not the tool.
-- Users are out of scope (no User nodes in the model; `okta_user` in state is ignored, as in M1).
+- **Trace interaction only.** No coverage overlay (M5 candidate), no plan-diff, no editing, no animation beyond select/highlight/dim.
+- **Static viewer.** File open / drag-drop only. A `serve` command, live-tenant mode in the browser, or any URL-fetching in the viewer: out.
+- **Read-only against Okta, as always.** The only live touch in M4 is `export --source okta` (existing M2 reader), and only in Phase B.
+- **Fixture-scale layout.** A hand-rolled layered layout (pure function, no dependency) is sufficient for tens of nodes. Auto-layout libraries (dagre/elk) are deferred until a real tenant makes the simple layout unusable.
 
-### Classification semantics (the brainwork)
+### The two policy layers, now in pixels (do not undo the model's core rule)
 
-Per kind (Group, App, GroupRule, GlobalSessionPolicy, AppAuthPolicy, AppGroupAssignment), bucket by id:
+The viewer must make `GlobalSessionPolicy` and `AppAuthPolicy` **visually unmistakable as different things**: distinct node styling AND distinct edge styling for `appliesTo` vs `protects`, and a legend that names them ("Global session policy — gates sign-in to Okta" / "App auth policy — gates a specific app"). The absence semantic carries over too: an app with no `protects` edge renders as **"org default app policy"**, never as unprotected/bare (model.ts rule, verified live in M2/M3).
 
-Per resource, join live and state by id (composite `(appId, groupId)` for assignments) and classify in this ORDER — state presence is decided first; exclusion is only ever a sub-split of the live-only set:
+### Interchange format (pin at checkpoint)
 
-1. **managed** — in live AND state. State presence proves customer IaC intent, so it wins outright: a resource in state is managed even if it also matches an exclusion predicate below. Counts toward coverage.
-2. **stale** — in state only (live-absent). Report only (deleted out-of-band, or a stale/foreign state file). Exclusion never applies — stale is by definition live-absent.
-3. of the rest (**live only**), split each record:
-   - **excluded** — matches an exclusion predicate (not Terraform-manageable / Okta-managed noise). Itemized with reason; NOT counted.
-   - **unmanaged** — everything else: the real IaC gap -> import block.
+`export` writes a versioned envelope, so the viewer can reject foreign/stale files with a clear message:
 
-Coverage % = managed / (managed + unmanaged), per kind and overall. Stale and excluded never enter the percentage but are always itemized — nothing is silently dropped.
+```json
+{ "version": 1, "source": "tfstate" | "okta", "generatedAt": "<ISO8601>", "graph": { "nodes": [...], "edges": [...] } }
+```
 
-Ordering is load-bearing: evaluating exclusion before state-presence would misfile a Terraform-managed-but-currently-unattached app auth policy (in both live and state) as `excluded` or `stale`. Because exclusion only partitions live-only records, that policy stays `managed` and the bug can't arise.
+The `graph` value is the untransformed `OktaGraph`. Edges carry no ids in the model; the viewer derives React Flow ids as `${kind}:${from}:${to}` (the same composite the M2 equivalence test sorts on).
 
-**Exclusion predicates (drafted from the live captures in `generated/okta-captures/`; applied ONLY to live-only records; confirm in step 1, review at checkpoint):**
+## Phase A — fixture-driven (no live data, no credentials; pause at the checkpoint)
 
-- **Group:** `type !== "OKTA_GROUP"` — `BUILT_IN` (Everyone, Okta Administrators) can't be created via `okta_group`; `APP_GROUP` is app-mastered. (Never in state, so always live-only anyway.)
-- **GlobalSessionPolicy:** `system: true` (the tenant "Default Policy").
-- **AppAuthPolicy:** `system: true` is already dropped by the M2 mapper as org-default machinery (that stays). Beyond that: a non-system policy referenced by NO visible app's `authenticationPolicyId` — on a fresh tenant the ~5 Okta-created console policies ("Okta Admin Console", "Okta Dashboard", …) protecting first-party apps `/api/v1/apps` doesn't list. Since this runs only on live-only records, a customer's Terraform-managed policy is already `managed` (it's in state) before this rule is consulted, even when momentarily unattached. Residual trade-off: a policy unattached AND absent from state (a genuinely orphaned click-ops policy) is excluded rather than flagged — visible in the excluded list, just not counted.
-- **App:** no predicate needed — first-party Okta apps don't appear in `/api/v1/apps` (verified: fresh tenant listed 0 apps pre-seed).
+1. **Dependency evaluation (CLAUDE.md rule: check before adding).** Record here: current versions, last release, maintenance state for `@xyflow/react` (React Flow's current package name — verify; the `reactflow` package was superseded), `react`/`react-dom`, `vite`, `@vitejs/plugin-react`. Confirm React Flow's license (MIT expected) and that the pure-core-in-browser assumption holds (no Node built-ins anywhere under `src/core/` — grep it). Decide single-package layout: root `package.json` gains devDeps + `web`/`web:build` scripts with Vite rooted at `src/render/web/`; a separate web `tsconfig` adds `DOM` lib + JSX. No workspaces unless something forces them.
 
-**Edge cases already flagged for M3, resolved by the scoping above:**
+### Dependency evaluation (step 1 writeup, recorded 2026-07-03)
 
-- *Explicit org-default app policy* (from the M2 checkpoint): state app carries `authenticationPolicyId = <system policy id>`, live carries `null`. Presence-only comparison of RESOURCES sees no AppAuthPolicy on either side -> no gap. Pin with a regression test.
-- *Plural assignments:* `okta_app_group_assignments` (plural) currently parses to nothing (M1 deferred it). A coverage tool that under-counts state-side assignments for the provider-recommended multi-group pattern would be wrong at its core purpose — so M3 implements plural parsing (one `AppGroupAssignment` per `group` block). Shape is doc-derived until the seed actually uses it; note that inline.
+**Decision: add the deps — all current, MIT, actively maintained, and compatible with this repo's Node 24 / ESM setup. No blockers; the milestone's core assumption holds.**
 
-## Phase A — offline (pause at the checkpoint)
+| package | version | license | note |
+|---|---|---|---|
+| `@xyflow/react` | 12.11.1 | MIT | Current pkg (superseded `reactflow`). Published ~2026-06-23 (~10 days ago) — actively maintained, patch cadence. |
+| `react` / `react-dom` | 19.2.7 | MIT | React Flow peers are `react >=17`, so **React 19 is fully supported** — the compatibility risk I flagged is a non-issue. |
+| `vite` | 8.1.3 | MIT | engines `^20.19 || >=22.12`; local Node is v24.14 — fine. |
+| `@vitejs/plugin-react` | 6.0.3 | MIT | peer `vite ^8.0.0` — aligns exactly with Vite 8. The tight 6↔8 peer coupling is itself evidence of coordinated, current maintenance. |
 
-1. **Pin the facts.** (a) Skim every file in `generated/okta-captures/` for exclusion-rule surprises beyond the drafted rules. (b) From the registry docs for the pinned provider (`okta/okta ~> 4.0`), confirm and record here: the import ID format per resource type (table below) and the state shape of `okta_app_group_assignments` (`app_id` + `group[]` blocks). CLAUDE.md rule applies: registry docs win over any list, including this one.
+- **Pure-core-in-browser assumption CONFIRMED.** Grep of `src/core/` for `node:`/`fs`/`path`/`url`/`process`/`__dirname`/`Buffer`/`require(` — zero hits; and `src/core/` imports nothing from `inputs/`/`render/`/`analysis/`. `import('./src/core/access-paths.ts')` resolves clean with all transitive deps. So `trace()`/`summarize()` run in the browser via Vite unchanged, exactly as the load-bearing decision assumes.
+- **Layout decision: single package, no workspaces.** Root `package.json` gains the 5 devDeps above + `web` (Vite dev server) and `web:build` (static bundle) scripts, Vite rooted at `src/render/web/`. A second `tsconfig` (`src/render/web/tsconfig.json`) extends the root and adds `lib: ["DOM","DOM.Iterable"]` + `jsx: "react-jsx"`; the root config stays Node/`NodeNext` so vitest and the CLI are untouched. Vite resolves the repo's `.js`-extension ESM imports natively, so core imports need no change.
+- **Testing-surface decision (flagged in pre-flight):** NO React component unit tests in M4 — no `jsdom`/`@testing-library/react`. The three pure viewer modules (parse-envelope, layout, highlight) are DOM-free and fully unit-tested; components are verified by `web:build` (exit 0 + bundle) plus manual acceptance (Phase B). Keeps the dep surface to the 5 above. Revisit only if component logic grows non-trivial.
+- **Sources:** npm registry (`registry.npmjs.org/{@xyflow/react,react,vite,@vitejs/plugin-react}`), [xyflow releases](https://github.com/xyflow/xyflow/releases).
 
-   | resource | import id (confirmed v4.20.0) |
-   |---|---|
-   | `okta_group` | `<group id>` |
-   | `okta_app_oauth` / `okta_app_saml` / other `okta_app_*` | `<app id>` |
-   | `okta_group_rule` | `<rule id>` |
-   | `okta_policy_signon` | `<policy id>` |
-   | `okta_app_signon_policy` | `<policy id>` |
-   | `okta_app_group_assignment` (singular) | `<app id>/<group id>` |
-   | `okta_app_group_assignments` (plural) | `<app id>` (imports ALL group blocks) |
+--- CHECKPOINT: review the dependency writeup + the pinned envelope schema before scaffolding. ---
 
-### Step 1 findings — facts pinned (recorded 2026-07-02)
+2. **`export` CLI command.** Same input options as `summary`/`trace` (`--source tfstate|okta`, `--state <path>`), plus `-o <path>` (default `generated/graph.json` — gitignored territory). Writes the envelope above. Reuses `loadGraph`; no new I/O paths. Missing-creds and missing-state errors behave exactly like the existing commands.
+3. **Viewer pure modules first (testable with zero DOM):**
+   - `parse-envelope.ts` — validate version/shape, actionable errors ("not an okta-iac-lens export", "unsupported version").
+   - `layout.ts` — layered columns by kind: GroupRule | Group | App, session policies flanking groups, app policies flanking apps; pure `(graph) -> Map<nodeId, {x,y}>`; deterministic.
+   - `highlight.ts` — `(graph, traceResult) -> { nodeIds, edgeIds }`: the selected group, its granted apps, its session policy, each app's auth policy, and exactly the `grants`/`appliesTo`/`protects` edges between them. Built ON `trace()` output, not re-derived from raw edges.
+4. **Scaffold + render.** Vite app in `src/render/web/`: file-open + drag-drop -> parse-envelope -> React Flow canvas. Custom node component per `NodeKind` (5), distinct edge styles per `EdgeKind` (4), the policy-layer legend, node labels = `name`. `npm run web` serves it; `npm run web:build` must produce a static bundle.
+5. **Trace interaction.** Click a Group -> run `trace()` (the imported core function) -> highlight set lights up, everything else dims; a detail panel lists what the CLI prints: granted apps with per-app policy or "org default app policy", plus the session policy or "(none)". Click elsewhere clears. Non-Group nodes: select/inspect only, no trace.
+6. **Tests + build green.** vitest for the three pure modules against the fixture graph; the export-command snapshot test; then `npm test` AND `npm run web:build` — show actual output of both.
 
-**Provider version.** Latest 4.x is **4.20.0** (Terraform Registry versions API); the current major line is 6.13.0. Per CLAUDE.md, v4.20.0 docs are the source of truth — NOT "latest" (6.x docs would be the cross-major trap). All import/shape facts below are quoted from the okta/okta **v4.20.0** resource docs.
+### Test oracle for Phase A (fixture tenant, same as M1–M3)
 
-**Import IDs — every drafted row CONFIRMED verbatim** (see the table above; `terraform import <resource>.example <id>` for each). Added the plural resource: `okta_app_group_assignments` imports by **`<app_id>`** and pulls in ALL of that app's group blocks. Consequence for step 4: import-block generation for assignment GAPS must target the **singular** `okta_app_group_assignment` (one `import{}` per (app,group) pair, id `<app_id>/<group_id>`) — the plural granularity is wrong for a per-pair gap. Step 4 already specifies the singular form; confirmed correct.
-
-**Plural `okta_app_group_assignments` state shape CONFIRMED (v4.20.0).** Top-level `app_id` (string) + a `group` **block list**; each `group` block = `id` (string, required — the group id), `priority` (number, optional), `profile` (string JSON, optional). In `terraform show -json`, `values.group` is an array. Step-2 parser: emit one `AppGroupAssignment` per `(values.app_id, values.group[i].id)`. (Contrast the singular resource: flat `values.app_id` + `values.group_id`.)
-
-**Exclusion predicates CONFIRMED against `generated/okta-captures/`**, with exact live enumeration:
-- **Groups (4):** Contractors + Engineering (`OKTA_GROUP`); Everyone + Okta Administrators (`BUILT_IN`). No `APP_GROUP` present. `type !== "OKTA_GROUP"` excludes the 2 BUILT_IN. NB `objectClass` is `["okta:user_group"]` for ALL four incl. BUILT_IN — `type` is the only correct discriminator, not `objectClass`.
-- **OKTA_SIGN_ON policies (2):** Default-MFA (`system:false`, custom → managed); Default Policy (`system:true`, applies to Everyone, priority 2 → excluded). `exclude system:true` confirmed.
-- **ACCESS_POLICY policies (7):** "Any two factors" (`system:true`, org default — GitHub points here → mapper nulls it, emits no node); Strict-Auth (`system:false`, custom — Datadog points here → managed); and **exactly 5** Okta-created `system:false` policies referenced by no visible app → excluded: Okta Admin Console, Okta Dashboard, Okta Browser Plugin, Okta Account Management Policy, Okta OIN Submission Tester. The drafted "~5 console policies" is precisely 5.
-
-**Surprise #1 (flag for checkpoint decision).** "Okta Account Management Policy" comes back from `type=ACCESS_POLICY` but carries `_embedded.resourceType: "END_USER_ACCOUNT_MANAGEMENT"` — it is NOT an app sign-on policy (it governs authenticator enrollment / password reset / unlock). The drafted "unattached to any visible app" predicate already excludes it correctly (no app references it), so coverage is right WITHOUT special-casing. Open question: also filter `AppAuthPolicy` emission/counting on `_embedded.resourceType === "APP"` for semantic precision (and cleaner live summaries)? That needs `_embedded.resourceType` added to `RawPolicy` (not captured today). **DECIDED (checkpoint 2026-07-02): add the resourceType guard in `map-api.ts`** — emit `AppAuthPolicy` only when `_embedded.resourceType === "APP"`, treating a MISSING `resourceType` as APP (back-compat with the doc-derived fixtures, which omit `_embedded`). The unattached predicate stays the coverage mechanism; the guard just keeps non-app access policies (END_USER_ACCOUNT_MANAGEMENT etc.) out of the node set and live summaries. Needs `_embedded?: { resourceType?: string }` on `RawPolicy`.
-
-**Surprise #2 (minor, no action).** Apps carry `_links.profileEnrollment` (a `PROFILE_ENROLLMENT` policy) alongside `_links.accessPolicy`. The reader queries only `type=ACCESS_POLICY` + `type=OKTA_SIGN_ON` and the mapper reads only `accessPolicy`, so profile-enrollment policies never enter the dataset. Pinned here so the extra link isn't mistaken for a gap later.
-
---- CHECKPOINT: review the confirmed exclusion rules + import-id formats with me before implementing. ---
-
-2. **Contract deltas — the one sanctioned touch to existing modules, additive only.** Coverage needs two flags that die before reaching `ParsedResource` today:
-   - `parse-tfstate.ts`: add optional `groupType?: string` (Group) and `system?: boolean` (GlobalSessionPolicy) to the union — the tfstate parser leaves both unset (state contents are definitionally customer-managed). Implement the plural-assignments case (replacing the `return null`).
-   - `okta-api.ts`: add `type?: string` to `RawGroup` (live-verified values: `OKTA_GROUP` / `BUILT_IN` / `APP_GROUP`) and `_embedded?: { resourceType?: string }` to `RawPolicy` (the Surprise-#1 guard).
-   - `map-api.ts`: populate both new fields, and gate `AppAuthPolicy` emission on `_embedded.resourceType === "APP"` (missing == APP, so the doc-derived M2 fixtures still emit Strict-Auth). No M2 test breaks: `test/map-api.test.ts` compares at the graph level (`comparable()` strips these fields; `build-graph.ts` never puts them on nodes) and otherwise via `toMatchObject` (partial), and the tfstate path leaves them unset — so the API-vs-tfstate equivalence stays green with no edit.
-   - `model.ts` / `build-graph.ts` / `access-paths.ts`: ZERO changes — the new fields never reach graph nodes. If they need to, that's the smell; stop.
-3. **`src/analysis/coverage.ts` — pure classifier.** `computeCoverage(live: ParsedResource[], state: ParsedResource[]): CoverageReport` implementing the table above. No I/O, no network — the architecture principle extends to `src/analysis/`.
-4. **`src/analysis/import-blocks.ts` — pure generator.** (CLAUDE.md's structure lists only `coverage.ts`; splitting TF-block rendering out from classification is a deliberate extension of that illustrative layout — both modules stay pure.) Unmanaged records -> Terraform 1.5+ `import` blocks. Resource type comes off the record (`App.appType` is already the TF type on both paths); label = sanitized display name (lowercase, `[^a-z0-9_]` -> `_`, prefix if digit-leading, dedupe collisions); assignments labeled `<app>_<group>` with id `<appId>/<groupId>` (names resolved from the live Group/App records). An app whose `appType` is `okta_app_unknown:<mode>` gets a commented-out block naming the unmapped mode — never a guessed type.
-5. **CLI: `coverage` command.** It needs both inputs, so no `--source` option: `--state <path>` (required) plus the live side from env, reusing M2's inert-without-creds behavior (missing env vars -> the existing loud error, exit code 1; missing `--state` -> clear error). Output: text report (per-kind counts, percentages, itemized gaps/stale/excluded with reasons, import blocks when gaps exist) and `--json`. Optional `--imports <path>` writes the blocks as a `.tf` file (file I/O stays in cli/render, not analysis); default such output under `generated/` (gitignored) — writing into `seed/` is only for the deliberate Phase B plan test.
-6. **Tests, then `npm test` green — show actual output.** The oracle below, plus both CLI error paths.
-
-### Test oracle for Phase A (defines "correct" offline)
-
-`fixtures/api/*` and `fixtures/sample-tenant.tfstate.json` describe the SAME logical tenant (proven graph-equivalent in M2), so they are the coverage baseline. Coverage-specific cases build enriched copies IN-TEST — never edit the shared fixtures; the M2 equivalence test depends on them.
-
-- **Baseline** (api fixtures as live, tfstate fixture as state): managed per kind = Groups 2/2, Apps 2/2, GroupRules 1/1, GlobalSessionPolicies 1/1, AppAuthPolicies 1/1, Assignments 3/3; unmanaged 0, stale 0, excluded 0; overall **10/10 = 100%**.
-- **Noise injection** (live side plus: Everyone `BUILT_IN` group; `system: true` "Default Policy" session policy; unattached "Okta Dashboard" access policy): still 100%; excluded itemizes exactly those 3, each with its reason.
-- **Gap injection** (live side plus: group `g-ops` "Click-Ops"; app `a-slack` "Slack" OPENID_CONNECT; assignment `a-gh <- g-ops`): unmanaged is exactly those 3; Groups 2/3, Apps 2/3, Assignments 3/4, overall 10/13; import blocks snapshot-match: `okta_group.click_ops` id `g-ops`, `okta_app_oauth.slack` id `a-slack`, `okta_app_group_assignment.github_click_ops` id `a-gh/g-ops`.
-- **Stale injection** (state side plus a group that isn't live): stale itemizes it; percentages unchanged (still 10/10).
-- **Explicit-default regression** (state app with `authenticationPolicyId: "p-default"`, live `null`): zero AppAuthPolicy gap or stale.
-- **Managed-unattached-policy regression** (a custom app auth policy present in BOTH state and live but attached to no visible app): classifies as `managed` — not `excluded`, not `stale`. Locks in the state-presence-before-exclusion ordering.
-- **Plural parsing** (doc-derived state fixture using `okta_app_group_assignments` for `a-gh` -> `g-eng` + `g-con`): yields 2 assignment records; coverage identical to the singular form.
+- **Export:** `export --state fixtures/sample-tenant.tfstate.json` -> envelope with `version: 1`, `source: "tfstate"`, and `graph` deep-equal to `buildGraph(parseTfState(fixture))`. Parsing that file back through `parse-envelope` returns an identical graph (round-trip).
+- **parse-envelope:** rejects `{version: 2}`, missing `graph`, and non-envelope JSON, each with a distinct actionable message.
+- **layout:** every node gets exactly one position; all Groups share the group column, Apps the app column; no two nodes at identical coordinates; output is deterministic across runs.
+- **highlight for `Engineering`:** nodes = exactly {g-eng, a-gh, a-dd, p-sess, p-auth}; edges = exactly {grants:g-eng:a-gh, grants:g-eng:a-dd, appliesTo:p-sess:g-eng, protects:p-auth:a-dd}. Note a-gh contributes NO protects edge — org default.
+- **highlight for `Contractors`:** nodes = exactly {g-con, a-gh}; edges = exactly {grants:g-con:a-gh}. No policy nodes — Contractors has no session policy and GitHub is org-default.
+- **Build:** `web:build` exits 0 and emits a static bundle.
 
 ### Phase A done when
 
-- Facts pinned and checkpoint passed; contract deltas in with zero graph-layer changes; `coverage.ts` + `import-blocks.ts` pure and tested; `coverage` CLI wired with loud missing-input errors; `npm test` green including every oracle row; still no write path anywhere in the tool.
+- Dependency writeup recorded here and checkpoint passed; `export` + the three pure modules + the viewer exist; every oracle row passes; `npm test` and `npm run web:build` both green; viewer verified by hand against `generated/graph.json` from the M1 fixture; no live call made, no credential touched.
 
-## Phase B — live ground truth (needs the tenant + admin console; do this with me)
+## Phase B — ground truth + demo polish (small; live read runs on Opus per the session note)
 
-1. Export real state: `cd seed && terraform show -json > ../generated/seed-state.json` (git-ignored).
-2. `npm run dev -- coverage --state generated/seed-state.json` -> expect **100%**, stale 0; excluded itemizes Everyone + Okta Administrators (BUILT_IN), Default Policy (system session policy), and the Okta-created console access policies — and nothing else. Any surprise = a bug or a wrong exclusion rule; investigate before proceeding.
-3. **Click-ops gap:** in the admin console, create a group ("Click-Ops Test") and assign the GitHub app to it. Re-run coverage -> exactly 1 unmanaged group + 1 unmanaged assignment, with import blocks.
-4. **Prove the blocks:** drop them into `seed/imports.tf`, run `terraform plan -generate-config-out=imported.tf` -> the plan shows exactly "2 to import" and no other changes. That plan output is the acceptance criterion for generated blocks.
-5. **Restore the baseline** either way: `terraform apply` the import (brings the click-ops resources under IaC) OR delete them in the console and discard the blocks. Re-run coverage -> 100% again, stale 0.
-6. Record any quirks discovered (shapes, exclusion surprises) here, pinned like the provider notes in CLAUDE.md.
+- [x] `export --source okta -o generated/live-graph.json` (read-only, Integrator tenant) — DONE. 14 nodes / 7 edges. `deriveCards` verified against the live export (data ground truth, matches the M3 console check): Engineering→Default-MFA, Everyone→Default Policy, Contractors/Okta Administrators→(none); Datadog→Strict-Auth, GitHub→org default. The 4 Okta-created console app-auth policies attach to no visible app and drop out of the viewer (the same noise M3 excluded — intended under attribute encoding).
+- [ ] **Manual acceptance checklist (visual; reworded for the badge design):** load `generated/live-graph.json`; the flow lays out rule→group→app with **no edge crossing a card**; Engineering's **Session policy** badge = Default-MFA, Datadog's **Auth policy** badge = Strict-Auth, GitHub's = "org default"; the two badge layers read as distinct (amber session vs red auth); clicking **Engineering** highlights GitHub + Datadog; clicking a **policy badge** highlights every card it governs; built-in groups (Everyone, Okta Administrators) render sensibly.
+- [x] Screenshot the viewer → `docs/viewer.png` (referenced by `README.md`). Reviewed: no tokens/URLs/PII in pixels; shows the live-graph render.
+- [x] **CI (the distribution slice):** `.github/workflows/ci.yml` runs root `tsc`, `web:typecheck`, `npm test`, and `web:build` on PRs/pushes to main.
+- [x] **Recorded quirks:** (1) core is browser-safe as assumed — no Node built-ins reached the bundle. (2) Under attribute encoding, a policy attached to no *visible* resource is invisible in the viewer (the 4 Okta console app policies) — intended, mirrors M3 coverage exclusion; if a real orphaned custom policy ever needs surfacing, that's a viewer feature, not a bug. Add any browser quirks found during the visual check.
+- [x] **Final M4 step — comprehensive security review (2026-07-03). Result: NO critical/high findings; one informational.**
+  - **Git history (paths + content):** every file ever committed inventoried — no `.env`, no real tfstate (fake fixture only), no captures/`generated/` ever entered history; content grep across all commits found zero token values, private keys, or client secrets (only prose describing the auth model). No 42-char token-shaped strings anywhere. The once-committed `.claude/settings.local.json` held benign permission globs only.
+  - **Credential handling:** token read from env only, sent only in the `Authorization` header, never in URLs, never logged; the missing-creds error names the variable, not values.
+  - **Viewer:** no `dangerouslySetInnerHTML`/`eval`/`innerHTML` (React default escaping throughout); zero network calls (fully static). Untrusted-JSON path (`parseEnvelope`) validates shape; `JSON.parse` is prototype-pollution-safe and ids land in `Map`s. Worst case from a hostile graph.json is a hung tab — acceptable for a local tool. (Robustness note, not security: nodes aren't per-element validated, so a malformed node renders as blank text.)
+  - **Supply chain:** `npm audit` 0 vulnerabilities; only install script in the tree is esbuild's (standard Vite toolchain, dev-time). CI references no secrets and runs read-only build/test. Hardening option (not required): pin action versions to SHAs instead of `@v4` tags.
+  - **Informational finding (RESOLVED 2026-07-03):** the one finding was the test-tenant subdomain hardcoded in `seed/main.tf` — not a credential (org URLs are user-facing; disposable free tenant), but it named a live endpoint in a public repo. Fixed by finishing the pattern the file already used for the token: `org_name`/`base_url`/`api_token` are now all sourced from the environment (`OKTA_ORG_NAME`/`OKTA_BASE_URL`/`OKTA_API_TOKEN`, confirmed against provider v4.20.0 docs). No tenant-specific value remains in tracked files.
 
-## Deferred (do NOT build in M3)
+## Backlog — "Recommended steps to increase IaC coverage" (feature request 2026-07-03)
 
-- **Attribute-level drift** — exists-in-both-but-differs (e.g. state says SAML, live says OIDC for the same id). Presence only.
-- Generating full resource config — import blocks only; `terraform plan -generate-config-out` owns config generation.
-- User-level resources and kinds outside the model: `okta_user`, per-user app assignments, group memberships, admin roles, auth servers, IdPs, network zones, …
-- Remediation for stale state (`removed` blocks, state surgery) — report only.
-- OEL evaluation; web viz (likely M4 — decide when M3 ships); ANY write operation against Okta.
+Surfaced right next to the coverage % — in the CLI `coverage` output now, and in the M5 viewer coverage overlay later — a short, prioritized, plain-language list of what the user can do to bring more of their Okta under Terraform. (Not an M4 item; recorded here so it survives the M4→M5 plan rewrite. Scoping calls below are mine — adjust when we pick it up.)
+
+- **Pure and derived, never hardcoded.** New pure module `src/analysis/recommendations.ts`: `recommend(report: CoverageReport): Recommendation[]`. Every suggestion is computed from the coverage buckets, so it can't drift from the actual tenant state and unit-tests against the same oracle fixtures as `coverage`. Same purity rail as the rest of `src/analysis`.
+- **Content, ordered by impact:**
+  - `unmanaged > 0` → the headline action: "Bring N resources under IaC," broken down by kind, with the exact path (`coverage --imports <file>` → add the generated blocks → `terraform plan` to import). Prioritize kinds by count / lowest per-kind coverage.
+  - `stale > 0` → "N resources are in Terraform but not the tenant — remove them from config, or investigate drift."
+  - `excluded` → informational: "N resources are Okta-managed (built-ins/system) and can't be Terraformed; they're excluded from the %, not a gap."
+  - 100% managed → positive confirmation, plus optional next-level nudges.
+- **Rendered** in the CLI coverage text/JSON, and (M5) as a panel beside the viewer's coverage overlay — the two pair naturally, so this is a strong M5 companion to that overlay.
+- **Rail:** guidance only. It never mutates Okta and never writes config on its own; the human still runs `terraform`. Read-only discipline holds.
+
+## Deferred (do NOT build in M4)
+
+- **Coverage overlay in the viewer** (managed/unmanaged/excluded badges) — the natural M5, pulling M3's report into the same canvas; pairs with the recommended-steps panel above.
+- `serve` command / live mode in the browser; any viewer network I/O.
+- Plan-diff view (`terraform plan -json`) — sequenced after viz on purpose; it lands as a before/after view in this viewer.
+- Auto-layout libraries; large-tenant performance work (virtualization, clustering).
+- Attribute-level drift; OEL evaluation (both still deferred, same reasons as M3).
+- Any WRITE operation against Okta. Still read-only, full stop.

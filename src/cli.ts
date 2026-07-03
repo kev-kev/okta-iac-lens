@@ -15,6 +15,7 @@ import { generateImportBlocks } from "./analysis/import-blocks.js";
 import { loadDotEnv, loadLiveResources, loadStateResources } from "./inputs/load-resources.js";
 import { renderCoverage, renderSummary, renderTrace } from "./render/cli.js";
 import type { OutputFormat } from "./render/cli.js";
+import { makeEnvelope } from "./render/envelope.js";
 
 interface SourceOpts {
   source: "tfstate" | "okta";
@@ -102,6 +103,26 @@ program
         await writeFile(opts.imports, generateImportBlocks(report, live), "utf8");
         console.error(`Wrote ${report.overall.unmanaged} import block(s) to ${opts.imports}`);
       }
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("export")
+  .description("Export the access graph as a JSON envelope for the web viewer.")
+  .addOption(sourceOption())
+  .option("--state <path>", "path to `terraform show -json` output (tfstate source)")
+  .option("-o, --output <path>", "where to write the graph envelope", "generated/graph.json")
+  .action(async (opts: SourceOpts & { output: string }) => {
+    try {
+      const graph = await loadGraph(opts);
+      const envelope = makeEnvelope(graph, opts.source, new Date().toISOString());
+      await writeFile(opts.output, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
+      console.error(
+        `Wrote ${graph.nodes.length} nodes / ${graph.edges.length} edges to ${opts.output}`,
+      );
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
