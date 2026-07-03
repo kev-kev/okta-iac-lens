@@ -39,6 +39,22 @@ The `graph` value is the untransformed `OktaGraph`. Edges carry no ids in the mo
 
 1. **Dependency evaluation (CLAUDE.md rule: check before adding).** Record here: current versions, last release, maintenance state for `@xyflow/react` (React Flow's current package name — verify; the `reactflow` package was superseded), `react`/`react-dom`, `vite`, `@vitejs/plugin-react`. Confirm React Flow's license (MIT expected) and that the pure-core-in-browser assumption holds (no Node built-ins anywhere under `src/core/` — grep it). Decide single-package layout: root `package.json` gains devDeps + `web`/`web:build` scripts with Vite rooted at `src/render/web/`; a separate web `tsconfig` adds `DOM` lib + JSX. No workspaces unless something forces them.
 
+### Dependency evaluation (step 1 writeup, recorded 2026-07-03)
+
+**Decision: add the deps — all current, MIT, actively maintained, and compatible with this repo's Node 24 / ESM setup. No blockers; the milestone's core assumption holds.**
+
+| package | version | license | note |
+|---|---|---|---|
+| `@xyflow/react` | 12.11.1 | MIT | Current pkg (superseded `reactflow`). Published ~2026-06-23 (~10 days ago) — actively maintained, patch cadence. |
+| `react` / `react-dom` | 19.2.7 | MIT | React Flow peers are `react >=17`, so **React 19 is fully supported** — the compatibility risk I flagged is a non-issue. |
+| `vite` | 8.1.3 | MIT | engines `^20.19 || >=22.12`; local Node is v24.14 — fine. |
+| `@vitejs/plugin-react` | 6.0.3 | MIT | peer `vite ^8.0.0` — aligns exactly with Vite 8. The tight 6↔8 peer coupling is itself evidence of coordinated, current maintenance. |
+
+- **Pure-core-in-browser assumption CONFIRMED.** Grep of `src/core/` for `node:`/`fs`/`path`/`url`/`process`/`__dirname`/`Buffer`/`require(` — zero hits; and `src/core/` imports nothing from `inputs/`/`render/`/`analysis/`. `import('./src/core/access-paths.ts')` resolves clean with all transitive deps. So `trace()`/`summarize()` run in the browser via Vite unchanged, exactly as the load-bearing decision assumes.
+- **Layout decision: single package, no workspaces.** Root `package.json` gains the 5 devDeps above + `web` (Vite dev server) and `web:build` (static bundle) scripts, Vite rooted at `src/render/web/`. A second `tsconfig` (`src/render/web/tsconfig.json`) extends the root and adds `lib: ["DOM","DOM.Iterable"]` + `jsx: "react-jsx"`; the root config stays Node/`NodeNext` so vitest and the CLI are untouched. Vite resolves the repo's `.js`-extension ESM imports natively, so core imports need no change.
+- **Testing-surface decision (flagged in pre-flight):** NO React component unit tests in M4 — no `jsdom`/`@testing-library/react`. The three pure viewer modules (parse-envelope, layout, highlight) are DOM-free and fully unit-tested; components are verified by `web:build` (exit 0 + bundle) plus manual acceptance (Phase B). Keeps the dep surface to the 5 above. Revisit only if component logic grows non-trivial.
+- **Sources:** npm registry (`registry.npmjs.org/{@xyflow/react,react,vite,@vitejs/plugin-react}`), [xyflow releases](https://github.com/xyflow/xyflow/releases).
+
 --- CHECKPOINT: review the dependency writeup + the pinned envelope schema before scaffolding. ---
 
 2. **`export` CLI command.** Same input options as `summary`/`trace` (`--source tfstate|okta`, `--state <path>`), plus `-o <path>` (default `generated/graph.json` — gitignored territory). Writes the envelope above. Reuses `loadGraph`; no new I/O paths. Missing-creds and missing-state errors behave exactly like the existing commands.
