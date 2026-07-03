@@ -18,6 +18,15 @@ const EDGE_COLOR: Record<EdgeKind, string> = {
   protects: "#dc2626",
 };
 
+/** Which node handles each edge kind connects. Spine edges run horizontally (right->left);
+ * policy edges drop vertically from the policy lane into the resource (bottom->top). */
+const EDGE_HANDLES: Record<EdgeKind, { source: string; target: string }> = {
+  populates: { source: "s-right", target: "t-left" },
+  grants: { source: "s-right", target: "t-left" },
+  appliesTo: { source: "s-bottom", target: "t-top" },
+  protects: { source: "s-bottom", target: "t-top" },
+};
+
 export interface GraphViewProps {
   graph: OktaGraph;
   /** When set, nodes/edges in the set are emphasized and the rest dimmed. null/undefined = no trace. */
@@ -58,10 +67,13 @@ export function GraphView({
         const id = edgeId(e);
         const active = highlight ? highlight.edgeIds.has(id) : undefined;
         const dim = active === false;
+        const handles = EDGE_HANDLES[e.kind];
         return {
           id,
           source: e.from,
           target: e.to,
+          sourceHandle: handles.source,
+          targetHandle: handles.target,
           label: showLabels ? e.kind : undefined,
           animated: active === true,
           style: {
@@ -94,6 +106,7 @@ export function GraphView({
         nodeTypes={nodeTypes}
         fitView
         panOnScroll
+        nodesConnectable={false}
         onNodeClick={(_event, node) => onNodeClick?.(node.id)}
         onPaneClick={() => onPaneClick?.()}
       >

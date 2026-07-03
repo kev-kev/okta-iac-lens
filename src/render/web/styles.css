@@ -246,6 +246,16 @@ body {
   opacity: 0.25;
 }
 
+/* Handles only anchor edges (nodesConnectable is off); keep them invisible. */
+.okta-node .react-flow__handle {
+  opacity: 0;
+  border: none;
+  min-width: 0;
+  min-height: 0;
+  width: 1px;
+  height: 1px;
+}
+
 .okta-node.kind-GroupRule {
   border-color: var(--kind-GroupRule);
 }

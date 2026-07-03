@@ -24,10 +24,15 @@ export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
   const dimmed = data.active === false;
   return (
     <div className={`okta-node kind-${data.kind}${dimmed ? " is-dimmed" : ""}`}>
-      <Handle type="target" position={Position.Left} />
+      {/* Spine edges anchor left/right; policy edges (appliesTo/protects) anchor top/bottom.
+          Handle ids are referenced by GraphView's EDGE_HANDLES. Handles are hidden via CSS —
+          they anchor edges, not user connections (nodesConnectable is off). */}
+      <Handle id="t-left" type="target" position={Position.Left} />
+      <Handle id="s-right" type="source" position={Position.Right} />
+      <Handle id="t-top" type="target" position={Position.Top} />
+      <Handle id="s-bottom" type="source" position={Position.Bottom} />
       <div className="okta-node-kind">{KIND_LABEL[data.kind]}</div>
       <div className="okta-node-label">{data.label}</div>
-      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
