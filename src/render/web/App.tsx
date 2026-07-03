@@ -2,21 +2,24 @@ import { useCallback, useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import { trace } from "../../core/access-paths.js";
 import type { TraceResult } from "../../core/access-paths.js";
-import type { GraphEnvelope } from "../envelope.js";
 import { EnvelopeError, parseEnvelope } from "./parse-envelope.js";
+import type { ParsedEnvelope } from "./parse-envelope.js";
 import { deriveCards } from "./derive-cards.js";
+import { coverageBadges } from "./coverage-badges.js";
 import { highlightForPolicy, highlightForTrace } from "./highlight.js";
 import { GraphView } from "./GraphView.js";
 import { TracePanel } from "./TracePanel.js";
 import { PolicyPanel } from "./PolicyPanel.js";
+import { CoveragePanel } from "./CoveragePanel.js";
 
 type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
 
 export function App() {
-  const [envelope, setEnvelope] = useState<GraphEnvelope | null>(null);
+  const [envelope, setEnvelope] = useState<ParsedEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [showLabels, setShowLabels] = useState(true);
+  const [showOverlay, setShowOverlay] = useState(true);
 
   const load = useCallback(async (file: File) => {
     try {
@@ -86,6 +89,12 @@ export function App() {
 
   const selectedPolicyId = selection?.kind === "policy" ? selection.id : null;
 
+  const coverage = envelope?.coverage ?? null;
+  const badges = useMemo(
+    () => (coverage && showOverlay ? coverageBadges(coverage) : null),
+    [coverage, showOverlay],
+  );
+
   return (
     <div className="app" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <header className="app-header">
@@ -107,6 +116,16 @@ export function App() {
               source: {envelope.source} · {envelope.graph.nodes.length} nodes · click a group to
               trace, or a policy badge to see its reach
             </span>
+            {coverage && (
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={showOverlay}
+                  onChange={(e) => setShowOverlay(e.target.checked)}
+                />
+                Coverage overlay
+              </label>
+            )}
             <label className="toggle">
               <input
                 type="checkbox"
@@ -120,6 +139,7 @@ export function App() {
       </header>
 
       {error && <div className="error-banner">{error}</div>}
+      {envelope?.notice && <div className="notice-banner">{envelope.notice}</div>}
 
       {cards ? (
         <div className="workspace">
@@ -127,6 +147,7 @@ export function App() {
             cards={cards}
             highlight={highlight}
             selectedPolicyId={selectedPolicyId}
+            badges={badges}
             showLabels={showLabels}
             onSelectGroup={(id) => setSelection({ kind: "group", id })}
             onSelectPolicy={(id) => setSelection({ kind: "policy", id })}
@@ -143,6 +164,7 @@ export function App() {
               onClear={() => setSelection(null)}
             />
           )}
+          {selection === null && coverage && showOverlay && <CoveragePanel report={coverage} />}
         </div>
       ) : (
         <div className="dropzone">

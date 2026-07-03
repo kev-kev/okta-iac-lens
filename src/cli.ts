@@ -86,7 +86,8 @@ program
   .requiredOption("--state <path>", "path to `terraform show -json` output (the managed baseline)")
   .option("--json", "output JSON instead of text")
   .option("--imports <path>", "write generated Terraform import blocks to this .tf file")
-  .action(async (opts: { state: string; json?: boolean; imports?: string }) => {
+  .option("--viz <path>", "write a graph envelope with the coverage overlay for the web viewer")
+  .action(async (opts: { state: string; json?: boolean; imports?: string; viz?: string }) => {
     try {
       loadDotEnv();
       const state = await loadStateResources(opts.state);
@@ -102,6 +103,12 @@ program
       if (opts.imports) {
         await writeFile(opts.imports, generateImportBlocks(report, live), "utf8");
         console.error(`Wrote ${report.overall.unmanaged} import block(s) to ${opts.imports}`);
+      }
+      if (opts.viz) {
+        // Embed the live graph (already fetched — no extra API calls) plus the coverage overlay.
+        const envelope = makeEnvelope(buildGraph(live), "okta", new Date().toISOString(), report);
+        await writeFile(opts.viz, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
+        console.error(`Wrote coverage viz (${report.items.length} classified) to ${opts.viz}`);
       }
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));

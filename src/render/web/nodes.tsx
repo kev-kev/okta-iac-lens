@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { Node, NodeProps } from "@xyflow/react";
 import type { NodeKind } from "../../core/model.js";
+import type { CoverageBucket } from "../../analysis/coverage.js";
 
 /** Handlers custom nodes reach via context (React Flow renders nodes below this provider). */
 export interface ViewerHandlers {
@@ -20,7 +21,16 @@ export interface OktaNodeData extends Record<string, unknown> {
   policyId?: string;
   /** This card's policy is the currently selected one (badge emphasized). */
   policyActive?: boolean;
+  /** M5 coverage overlay: this card's bucket, and its policy badge's bucket (undefined = no overlay). */
+  bucket?: CoverageBucket;
+  policyBucket?: CoverageBucket;
 }
+
+/** Short tag shown on a card/badge when the coverage overlay is on. Managed is left implicit. */
+const BUCKET_TAG: Partial<Record<CoverageBucket, string>> = {
+  unmanaged: "NOT IN TERRAFORM",
+  excluded: "OKTA-MANAGED",
+};
 
 export type OktaFlowNode = Node<OktaNodeData, "okta">;
 
@@ -39,15 +49,19 @@ function PolicyBadge({
   name,
   policyId,
   active,
+  bucket,
 }: {
   layer: "session" | "auth";
   name: string;
   policyId?: string;
   active?: boolean;
+  bucket?: CoverageBucket;
 }) {
   const ctx = useContext(ViewerContext);
   const label = layer === "session" ? "Session policy" : "Auth policy";
-  const className = `policy-badge badge-${layer}${active ? " is-selected" : ""}`;
+  const className =
+    `policy-badge badge-${layer}${active ? " is-selected" : ""}` +
+    (bucket ? ` bucket-${bucket}` : "");
 
   // No policyId => a non-interactive badge: a group with no session policy, or an app on the
   // org-default app policy. (Org default is a real state, not "unprotected".)
@@ -77,12 +91,15 @@ function PolicyBadge({
 
 export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
   const dimmed = data.active === false;
+  const bucketClass = data.bucket ? ` bucket-${data.bucket}` : "";
+  const tag = data.bucket ? BUCKET_TAG[data.bucket] : undefined;
   return (
-    <div className={`okta-node kind-${data.kind}${dimmed ? " is-dimmed" : ""}`}>
+    <div className={`okta-node kind-${data.kind}${dimmed ? " is-dimmed" : ""}${bucketClass}`}>
       {/* Handles only anchor edges (nodesConnectable off); hidden via CSS. dagre lays out
           left->right, so incoming edges enter left, outgoing leave right. */}
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
+      {tag && <div className={`coverage-tag bucket-${data.bucket}`}>{tag}</div>}
       <div className="okta-node-kind">{KIND_LABEL[data.kind]}</div>
       <div className="okta-node-label">{data.label}</div>
       {data.kind === "Group" && (
@@ -91,6 +108,7 @@ export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
           name={data.policyName ?? "(none)"}
           policyId={data.policyId}
           active={data.policyActive}
+          bucket={data.policyBucket}
         />
       )}
       {data.kind === "App" && (
@@ -99,6 +117,7 @@ export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
           name={data.policyName ?? "org default"}
           policyId={data.policyId}
           active={data.policyActive}
+          bucket={data.policyBucket}
         />
       )}
     </div>

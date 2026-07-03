@@ -17,6 +17,7 @@
     "GraphView.tsx",
     "nodes.tsx",
     "TracePanel.tsx",
-    "PolicyPanel.tsx"
+    "PolicyPanel.tsx",
+    "CoveragePanel.tsx"
   ]
 }

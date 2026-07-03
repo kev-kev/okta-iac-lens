@@ -7,7 +7,8 @@
 import { describe, expect, it } from "vitest";
 import { ENVELOPE_VERSION, makeEnvelope } from "../src/render/envelope.js";
 import { EnvelopeError, parseEnvelope } from "../src/render/web/parse-envelope.js";
-import { graphFromFixture } from "./fixture.js";
+import { computeCoverage } from "../src/analysis/coverage.js";
+import { graphFromFixture, liveResources, stateResources } from "./fixture.js";
 
 describe("makeEnvelope + parseEnvelope", () => {
   const graph = graphFromFixture();
@@ -26,6 +27,32 @@ describe("makeEnvelope + parseEnvelope", () => {
     const roundTripped = parseEnvelope(JSON.parse(JSON.stringify(envelope)));
     expect(roundTripped.graph).toEqual(graph);
     expect(roundTripped.source).toBe("tfstate");
+  });
+});
+
+describe("makeEnvelope + parseEnvelope — coverage overlay (M5)", () => {
+  const graph = graphFromFixture();
+  const report = computeCoverage(liveResources(), stateResources());
+
+  it("round-trips an embedded coverage report", () => {
+    const env = makeEnvelope(graph, "okta", "t", report);
+    const rt = parseEnvelope(JSON.parse(JSON.stringify(env)));
+    expect(rt.coverage).toEqual(report);
+    expect(rt.notice).toBeUndefined();
+  });
+
+  it("a coverage-less v1 file parses with no coverage and no notice (compat)", () => {
+    const rt = parseEnvelope(JSON.parse(JSON.stringify(makeEnvelope(graph, "tfstate", "t"))));
+    expect(rt.coverage).toBeUndefined();
+    expect(rt.notice).toBeUndefined();
+  });
+
+  it("degrades gracefully on a malformed coverage field (decision B): graph renders + notice", () => {
+    const bad = { ...makeEnvelope(graph, "okta", "t"), coverage: { bogus: true } };
+    const rt = parseEnvelope(bad);
+    expect(rt.graph).toEqual(graph);
+    expect(rt.coverage).toBeUndefined();
+    expect(rt.notice).toMatch(/malformed/i);
   });
 });
 

@@ -42,7 +42,7 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 ### Test oracle for Phase A (same fixture tenant; reuse the M3 in-test injections)
 
 - **recommend():** baseline (100%) → exactly one confirmation item; gap injection (Click-Ops group + Slack + assignment) → headline "3 unmanaged" with per-kind breakdown mentioning `--imports`; stale injection → a stale-guidance item; noise injection → informational-only, no action items.
-- **Envelope:** with-coverage round-trip preserves graph AND report; a coverage-less v1 file parses exactly as today (no overlay, no crash) — the compat row; a malformed `coverage` field is rejected with an actionable message.
+- **Envelope:** with-coverage round-trip preserves graph AND report; a coverage-less v1 file parses exactly as today (no overlay, no crash) — the compat row; a malformed `coverage` field **degrades gracefully** (decision B) — graph still renders, overlay dropped, `notice` set — rather than rejecting the file.
 - **coverage-badges:** gap injection → `bucketByNodeId` marks exactly `g-ops`/`a-slack` unmanaged and fixtures managed; `bucketByEdgeId` marks exactly `grants:a-gh… (g-ops)` unmanaged; noise injection → Everyone/system-policy ids excluded.
 - **CLI:** `--viz` file's `graph` deep-equals the graph built from the live-side resources; text output contains "Recommended steps"; JSON parses with `recommendations`.
 
