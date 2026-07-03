@@ -48,3 +48,40 @@ describe("parseTfState", () => {
     expect(rule.populates).toEqual(["g-eng"]);
   });
 });
+
+describe("parseTfState — plural okta_app_group_assignments", () => {
+  const stateWith = (values: Record<string, unknown>): unknown => ({
+    values: {
+      root_module: {
+        resources: [
+          {
+            address: "okta_app_group_assignments.x",
+            mode: "managed",
+            type: "okta_app_group_assignments",
+            name: "x",
+            values,
+          },
+        ],
+      },
+    },
+  });
+
+  it("emits one AppGroupAssignment per group block (state-side analogue of the live all-groups read)", () => {
+    const state = stateWith({
+      app_id: "a-gh",
+      group: [
+        { id: "g-eng", priority: 0 },
+        { id: "g-con", priority: 1, profile: "{}" },
+      ],
+    });
+    const assignments = byKind(parseTfState(state), "AppGroupAssignment");
+    expect(assignments.map((a) => `${a.appId}/${a.groupId}`).sort()).toEqual([
+      "a-gh/g-con",
+      "a-gh/g-eng",
+    ]);
+  });
+
+  it("ignores a plural resource with no group blocks", () => {
+    expect(byKind(parseTfState(stateWith({ app_id: "a-x" })), "AppGroupAssignment")).toHaveLength(0);
+  });
+});

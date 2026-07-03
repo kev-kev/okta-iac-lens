@@ -22,3 +22,6 @@ generated/
 .terraform/
 .terraform.lock.hcl
 *.tfplan
+
+# Per-user Claude Code permission grants — machine-local, not shared config
+.claude/settings.local.json

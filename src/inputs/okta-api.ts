@@ -19,6 +19,8 @@
 /** Minimal, defensive view of the live API shapes we touch (mirrors parse-tfstate's RawResource). */
 export interface RawGroup {
   id: string;
+  /** OKTA_GROUP (customer-managed) | BUILT_IN (Everyone, Okta Administrators) | APP_GROUP (app-mastered). Only OKTA_GROUP is Terraform-manageable. */
+  type?: string;
   profile?: { name?: string; description?: string };
 }
 
@@ -63,6 +65,14 @@ export interface RawPolicy {
   conditions?: {
     people?: { groups?: { include?: string[] } };
   };
+  /**
+   * For ACCESS_POLICY: the policy's target resource type, e.g. "APP" vs
+   * "END_USER_ACCOUNT_MANAGEMENT". Only APP policies are app sign-on policies. Verified
+   * live: `type=ACCESS_POLICY` returns a non-app "Okta Account Management Policy" carrying
+   * resourceType END_USER_ACCOUNT_MANAGEMENT. The mapper emits AppAuthPolicy nodes for
+   * APP-typed policies only (a MISSING resourceType is treated as APP).
+   */
+  _embedded?: { resourceType?: string };
 }
 
 /** One row of `GET /api/v1/apps/{appId}/groups` — the live, all-groups-for-this-app read. */

@@ -1,121 +1,127 @@
 # PLAN.md — current milestone
 
-Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 2 ships, rewrite this for M3.
+Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 3 ships, rewrite this for M4.
 
-> **Status of M1:** shipped. The static path from `terraform show -json` -> `ParsedResource[]` -> `OktaGraph` -> `trace()` is built and tested against `fixtures/sample-tenant.tfstate.json`. M2 builds a *second input* that produces the same normalized records, so `build-graph` and `access-paths` are reused unchanged.
+> **Status of M1 (shipped):** `terraform show -json` -> `ParsedResource[]` -> `OktaGraph` -> `trace()`/`summary`, tested against `fixtures/sample-tenant.tfstate.json`.
+>
+> **Status of M2 (shipped, merged to main):** live read-only reader (`HttpOktaReader` + pure `mapApiSnapshot`) emits the same `ParsedResource[]`; API-vs-tfstate graph equivalence proven offline; ground-truth acceptance vs the admin console passed on the seeded Integrator tenant (`seed/main.tf`, provider pinned `okta/okta ~> 4.0`). Read-only rail verified live: write probe 403s.
 
-## Milestone 2: live read-only Okta tenant reader
+## Milestone 3: IaC coverage — reconcile live tenant vs Terraform state
 
-> **Status (2026-07-02): MILESTONE 2 COMPLETE.** Phase A: built and green (23 tests). Phase B: tenant seeded via `seed/main.tf`; re-captured `apps`/`group-rules` shapes matched the doc-derived fixtures exactly (zero mapper drift); API-side cross-checks (`/apps/{id}/users`, `/groups/{id}/apps` — endpoints independent of the tool's own code path) confirmed entitlement. **Ground-truth acceptance test passed**: admin console confirmed all four checks — test user sees GitHub + Datadog under Applications; Datadog's Sign On policy is Strict-Auth; GitHub's is the system default; Engineering's Global Session Policy is Default-MFA (priority 1, above the system Default Policy). Tool output matches Okta's own console on every point. PR opened.
+> **Status (2026-07-02): MILESTONE 3 COMPLETE.** Phase A shipped and green (45 tests): step-1 facts pinned against okta/okta v4.20.0; contract deltas (`groupType`/`system` on `ParsedResource`, plural `okta_app_group_assignments` parsing, the `_embedded.resourceType` app-auth guard) with zero graph-layer changes; pure `computeCoverage` classifier and `import-blocks` generator; and the `coverage` CLI (text/JSON, `--imports`, loud missing-creds error).
+>
+> **Phase B (live ground truth) PASSED** against the seeded Integrator tenant. Real state exported (`terraform show -json` → `generated/seed-state.json`, gitignored; also closes the real-export loop M1 deferred — parses to 10 records). Baseline coverage = **10/10 = 100%**, 0 gap/stale, excluded = exactly the 7 Okta built-ins (2 BUILT_IN groups, Default Policy, 4 Okta-created app access policies — note the non-app "Account Management Policy" is correctly absent, validating the Surprise-#1 `resourceType` guard live). Click-ops gap (1 group + 1 GitHub assignment created in the console) surfaced as **exactly** 2 unmanaged → 10/12 = 83.3%, with correct import blocks (singular `okta_app_group_assignment`, composite id). Those blocks proved out under real Terraform: `terraform plan` → **`Plan: 2 to import, 0 to add, 0 to change, 0 to destroy`**. Deleting the group restored **10/10 = 100%**. Tool output matched the tenant on every point. **Only the free Integrator test tenant, read-only; `plan` never mutated state.** PR open.
 
-**Goal:** add `src/inputs/okta-api.ts`, a **read-only** reader that pulls Groups, Apps, group rules, and both policy layers from a live Okta tenant and emits the **same `ParsedResource[]` shape** that `parse-tfstate.ts` already produces. Feeding that into the existing `buildGraph` must yield an `OktaGraph` the existing `trace()`/`summary` operate on with **zero changes to `src/core/`**.
+**Goal:** a `coverage` CLI command that reads BOTH inputs — the live tenant (M2 reader) and a `terraform show -json` export (M1 parser) — and answers CLAUDE.md's second differentiated capability: how much of the org is under IaC, what exactly isn't, and ready-to-paste Terraform `import` blocks for the gap. New logic lives in `src/analysis/` (pure, same rule as core) plus a thin CLI/render surface.
 
-**The load-bearing design decision:** the live reader's output type is `ParsedResource[]` (the tagged union in `src/core/parse-tfstate.ts`), NOT the graph and NOT a new SDK-shaped type. That normalized intermediate is the seam between "where data comes from" (tfstate file vs live API) and "what we compute" (graph + traversal). If M2 introduces a parallel model, that's a design smell — stop and reconsider.
+**The load-bearing design decision:** the diff operates on `ParsedResource[]` — the same normalized seam both inputs already emit. `computeCoverage(live, state)` is a pure set comparison joined on Okta `id` (composite `(appId, groupId)` for assignments; ids are identical across the two paths by M2's design). If coverage needs a parallel model or reaches back into raw API/tfstate shapes, that's the M2 design smell again — stop and reconsider.
 
-**Hard constraint (this milestone cannot be fully finished without a tenant).** I do **not** yet have an Okta Integrator test tenant. So M2 splits into **Phase A (buildable now, against recorded/mocked responses)** and **Phase B (blocked on a live tenant)**. Do all of Phase A. Do not attempt Phase B until I confirm a tenant exists.
+**Scope rails:**
 
----
+- **Presence/absence only.** A resource is managed, unmanaged, or stale. Attribute-level drift (exists in both, differs inside) is NOT M3.
+- **Read-only against Okta, as always.** The tool only reads. `terraform plan`/`apply` in Phase B is the human's seed workflow, not the tool.
+- Users are out of scope (no User nodes in the model; `okta_user` in state is ignored, as in M1).
 
-## Phase A — buildable now (no live tenant, no real credentials)
+### Classification semantics (the brainwork)
 
-Everything here is validated against **recorded/mocked JSON fixtures of API responses**, never a live call. This keeps `src/core/` pure and testable with zero environment, exactly as M1 is.
+Per kind (Group, App, GroupRule, GlobalSessionPolicy, AppAuthPolicy, AppGroupAssignment), bucket by id:
 
-### Steps (pause at the checkpoint)
+Per resource, join live and state by id (composite `(appId, groupId)` for assignments) and classify in this ORDER — state presence is decided first; exclusion is only ever a sub-split of the live-only set:
 
-1. **Dependency evaluation for `@okta/okta-sdk-nodejs`** (per CLAUDE.md — check current version + that it's actively maintained *before* adding it). Record findings in this file: latest version, last release date, whether it's the officially supported client, its auth models (API token vs OAuth 2.0 private-key/scoped), and its pagination shape. Decide SDK vs. a thin `fetch` wrapper against the Okta REST API. Bias toward the SDK **only if** it's current and doesn't drag in heavy/unmaintained transitive deps; otherwise a small typed `fetch` client is acceptable and keeps the dependency surface minimal. Do not add the dependency until this step is written up.
+1. **managed** — in live AND state. State presence proves customer IaC intent, so it wins outright: a resource in state is managed even if it also matches an exclusion predicate below. Counts toward coverage.
+2. **stale** — in state only (live-absent). Report only (deleted out-of-band, or a stale/foreign state file). Exclusion never applies — stale is by definition live-absent.
+3. of the rest (**live only**), split each record:
+   - **excluded** — matches an exclusion predicate (not Terraform-manageable / Okta-managed noise). Itemized with reason; NOT counted.
+   - **unmanaged** — everything else: the real IaC gap -> import block.
 
-2. **Define the response-fixture set** `fixtures/api/` — hand-authored JSON matching the **documented** Okta API response shapes for the pinned API version, one file per endpoint:
-   - `groups.json` (`GET /api/v1/groups`)
-   - `apps.json` (`GET /api/v1/apps`)
-   - `group-rules.json` (`GET /api/v1/groups/rules`)
-   - `policies-signon.json` (global session policies + their `conditions.people.groups.include` — the group ids each applies to)
-   - `app-signon-policies.json` (app auth policies) + the app->policy linkage (`GET /api/v1/apps/{id}` `_links.accessPolicy`, or `/policies?type=ACCESS_POLICY` with app mappings)
-   These fixtures are the M2 oracle. They must be shaped like **real API responses**, not like tfstate — that shape difference is the whole point of the mapping layer. Where the exact shape is uncertain without a tenant, note the assumption inline and flag it for Phase B verification.
+Coverage % = managed / (managed + unmanaged), per kind and overall. Stale and excluded never enter the percentage but are always itemized — nothing is silently dropped.
 
-3. **`src/inputs/okta-api.ts` — the reader interface + client boundary.** This is the I/O boundary (like `tfstate-file.ts`); no logic from `src/core/` moves here. Shape it as:
-   - A narrow `OktaReader` interface with one read method per resource kind (e.g. `listGroups()`, `listApps()`, `listGroupRules()`, `listGlobalSessionPolicies()`, `listAppAuthPolicies()` + app linkage), each returning the **raw API JSON** typed to the documented shape.
-   - A concrete `HttpOktaReader` implementing it against the live API (paginated, read-only). **Its constructor takes config; it makes no calls at construction.** Actual live calls are exercised only in Phase B.
-   - Credential/config plumbing read from **env vars only** (`OKTA_ORG_URL`, plus either `OKTA_API_TOKEN` or the OAuth client-id/scopes/private-key set) — never hardcoded, never logged. Add the placeholders to `.env.example`. Wire the **read-only scopes** `okta.groups.read`, `okta.apps.read`, `okta.policies.read` and assert/annotate that nothing requests write scopes.
-   - Fail loudly with a clear message if required env vars are missing.
+Ordering is load-bearing: evaluating exclusion before state-presence would misfile a Terraform-managed-but-currently-unattached app auth policy (in both live and state) as `excluded` or `stale`. Because exclusion only partitions live-only records, that policy stays `managed` and the bug can't arise.
 
-4. **`src/inputs/map-api.ts` (or `okta-api-map.ts`) — PURE mapping: raw API JSON -> `ParsedResource[]`.** This is the actual brainwork of M2 and it must be pure (no I/O, no network) so it tests against the `fixtures/api/` files with zero environment. It is the API-side analogue of `parse-tfstate.ts`. It must:
-   - Map each API object to the matching `ParsedResource` variant, using the **same ids** (`id` join key) so edges wire up identically to the tfstate path.
-   - Keep the **two policy layers separate** (global session policy `appliesTo` groups via `conditions.people.groups.include`; app auth policy `protects` apps via the app's access-policy link) — same rule as M1, do not collapse them.
-   - Handle the **`okta_app_group_assignments` plural gotcha** correctly: the live API returns ALL groups assigned to an app (`GET /api/v1/apps/{id}/groups`), which is exactly the plural-resource behavior M1 deferred. Here it's not a gotcha, it's the natural read — emit one `AppGroupAssignment` record per (app, group). Note in a comment that this is why live-vs-state can legitimately differ (the seed of M3 coverage).
-   - Preserve the "no app auth policy == org default, not unprotected" semantic from `model.ts`.
+**Exclusion predicates (drafted from the live captures in `generated/okta-captures/`; applied ONLY to live-only records; confirm in step 1, review at checkpoint):**
 
---- CHECKPOINT (RESOLVED 2026-07-01) ---
-Original intent: confirm assumed API shapes before the mapper calcified them. Resolved better than planned — the tenant arrived early, so shapes were verified against *reality* (live smoke + capture to `generated/okta-captures/`), not just docs. The open default-policy question was settled empirically: every app carries an `_links.accessPolicy` link, and the org default is identifiable as the single `system: true` ACCESS_POLICY ("Any two factors"). Mapper rule: app -> system policy == org default == `authenticationPolicyId: null`, and system policies are not emitted as `AppAuthPolicy` nodes. Known edge case (accepted, flagged for M3): Terraform config that EXPLICITLY assigns the org-default policy shows a `protects` edge on the tfstate path but null on the live path.
---- END CHECKPOINT ---
+- **Group:** `type !== "OKTA_GROUP"` — `BUILT_IN` (Everyone, Okta Administrators) can't be created via `okta_group`; `APP_GROUP` is app-mastered. (Never in state, so always live-only anyway.)
+- **GlobalSessionPolicy:** `system: true` (the tenant "Default Policy").
+- **AppAuthPolicy:** `system: true` is already dropped by the M2 mapper as org-default machinery (that stays). Beyond that: a non-system policy referenced by NO visible app's `authenticationPolicyId` — on a fresh tenant the ~5 Okta-created console policies ("Okta Admin Console", "Okta Dashboard", …) protecting first-party apps `/api/v1/apps` doesn't list. Since this runs only on live-only records, a customer's Terraform-managed policy is already `managed` (it's in state) before this rule is consulted, even when momentarily unattached. Residual trade-off: a policy unattached AND absent from state (a genuinely orphaned click-ops policy) is excluded rather than flagged — visible in the excluded list, just not counted.
+- **App:** no predicate needed — first-party Okta apps don't appear in `/api/v1/apps` (verified: fresh tenant listed 0 apps pre-seed).
 
-### Dependency evaluation (step 1 writeup, recorded 2026-07-01)
+**Edge cases already flagged for M3, resolved by the scoping above:**
 
-**Decision: no SDK — thin typed client on Node's native `fetch` (`HttpOktaReader`, ~150 lines).**
+- *Explicit org-default app policy* (from the M2 checkpoint): state app carries `authenticationPolicyId = <system policy id>`, live carries `null`. Presence-only comparison of RESOURCES sees no AppAuthPolicy on either side -> no gap. Pin with a regression test.
+- *Plural assignments:* `okta_app_group_assignments` (plural) currently parses to nothing (M1 deferred it). A coverage tool that under-counts state-side assignments for the provider-recommended multi-group pattern would be wrong at its core purpose — so M3 implements plural parsing (one `AppGroupAssignment` per `group` block). Shape is doc-derived until the seed actually uses it; note that inline.
 
-- `@okta/okta-sdk-nodejs` latest: v8.1.0 (2026-05-06). Actively maintained, official, ships own TS types — it passes the CLAUDE.md maintenance bar.
-- Rejected anyway: it depends on legacy `node-fetch@2` (predates native fetch) and a crypto stack (`njwt`, `node-jose`, `eckles`, `rasha`) that exists to support OAuth 2.0 private-key-JWT auth. We use SSWS token auth and need exactly six paginated read-only GETs; none of that weight buys us anything.
-- Revisit if M3+ ever needs OAuth service-app auth (DPoP/private-key JWT) — that's the point where the SDK starts paying for its dependencies.
-- Pagination: Okta pages via the `Link: <url>; rel="next"` response header (RFC 5988); `HttpOktaReader.getPaginated` follows it. Confirmed working live.
+## Phase A — offline (pause at the checkpoint)
 
-### Live smoke findings (2026-07-01, fresh Integrator tenant)
+1. **Pin the facts.** (a) Skim every file in `generated/okta-captures/` for exclusion-rule surprises beyond the drafted rules. (b) From the registry docs for the pinned provider (`okta/okta ~> 4.0`), confirm and record here: the import ID format per resource type (table below) and the state shape of `okta_app_group_assignments` (`app_id` + `group[]` blocks). CLAUDE.md rule applies: registry docs win over any list, including this one.
 
-- Groups: `id` + `profile.name` — fixture shape CONFIRMED. Fresh tenant ships `Everyone` and `Okta Administrators`.
-- OKTA_SIGN_ON policy: `conditions.people.groups.include` sits on the policy itself — CONFIRMED (default policy includes the `Everyone` group id, `system: true`).
-- ACCESS_POLICY list: 6 built-ins on a fresh tenant; exactly one is `system: true` ("Any two factors") — the org default. Okta-created-but-not-system policies (Okta Dashboard, Admin Console, etc.) appear as normal policies and WILL show up in live summaries; that is live truth, not a bug.
-- Apps and group rules: fresh tenant returns 0 of each, so `fixtures/api/apps.json` and `group-rules.json` shapes are still doc-derived, NOT live-verified. Re-verify both after seeding (first Phase B task below).
-- Read-only rail: POST /api/v1/groups with the token -> **403**. Credential provably cannot write.
+   | resource | import id (confirmed v4.20.0) |
+   |---|---|
+   | `okta_group` | `<group id>` |
+   | `okta_app_oauth` / `okta_app_saml` / other `okta_app_*` | `<app id>` |
+   | `okta_group_rule` | `<rule id>` |
+   | `okta_policy_signon` | `<policy id>` |
+   | `okta_app_signon_policy` | `<policy id>` |
+   | `okta_app_group_assignment` (singular) | `<app id>/<group id>` |
+   | `okta_app_group_assignments` (plural) | `<app id>` (imports ALL group blocks) |
 
-5. **Reuse `buildGraph` unchanged.** Prove it: a test that takes the `fixtures/api/` records through the mapper -> `buildGraph` -> `trace()` and asserts the same graph invariants M1 asserts. If `buildGraph` needs *any* change to accept API-sourced records, that's a signal the mapper isn't hitting the `ParsedResource` contract — fix the mapper, not core.
+### Step 1 findings — facts pinned (recorded 2026-07-02)
 
-6. **Wire a CLI surface, but keep it inert without creds.** Add an input-source option so `summary`/`trace` can target either a state file (M1, default) or the live API (M2), e.g. `--source tfstate|okta` or a `--okta` flag. When `--okta` is chosen but env vars are absent, exit with a clear "set OKTA_ORG_URL / token to use live mode" message — do **not** silently no-op. The live path stays untested end-to-end until Phase B; the arg-parsing and the missing-creds error path are testable now.
+**Provider version.** Latest 4.x is **4.20.0** (Terraform Registry versions API); the current major line is 6.13.0. Per CLAUDE.md, v4.20.0 docs are the source of truth — NOT "latest" (6.x docs would be the cross-major trap). All import/shape facts below are quoted from the okta/okta **v4.20.0** resource docs.
 
-7. **Tests (all offline).** vitest coverage for: the mapper against every `fixtures/api/` file (the M2 oracle below); the reuse-buildGraph integration test; the CLI missing-creds error path. Then run `npm test` and show me actual output.
+**Import IDs — every drafted row CONFIRMED verbatim** (see the table above; `terraform import <resource>.example <id>` for each). Added the plural resource: `okta_app_group_assignments` imports by **`<app_id>`** and pulls in ALL of that app's group blocks. Consequence for step 4: import-block generation for assignment GAPS must target the **singular** `okta_app_group_assignment` (one `import{}` per (app,group) pair, id `<app_id>/<group_id>`) — the plural granularity is wrong for a per-pair gap. Step 4 already specifies the singular form; confirmed correct.
 
-### Test oracle for Phase A (defines "correct" without a tenant)
+**Plural `okta_app_group_assignments` state shape CONFIRMED (v4.20.0).** Top-level `app_id` (string) + a `group` **block list**; each `group` block = `id` (string, required — the group id), `priority` (number, optional), `profile` (string JSON, optional). In `terraform show -json`, `values.group` is an array. Step-2 parser: emit one `AppGroupAssignment` per `(values.app_id, values.group[i].id)`. (Contrast the singular resource: flat `values.app_id` + `values.group_id`.)
 
-Author `fixtures/api/` to describe **the same logical tenant as the M1 fixture**, so the two inputs are provably interchangeable. That is the strongest offline check available: *the live-API path and the tfstate path, given the same tenant, must produce the same graph.*
+**Exclusion predicates CONFIRMED against `generated/okta-captures/`**, with exact live enumeration:
+- **Groups (4):** Contractors + Engineering (`OKTA_GROUP`); Everyone + Okta Administrators (`BUILT_IN`). No `APP_GROUP` present. `type !== "OKTA_GROUP"` excludes the 2 BUILT_IN. NB `objectClass` is `["okta:user_group"]` for ALL four incl. BUILT_IN — `type` is the only correct discriminator, not `objectClass`.
+- **OKTA_SIGN_ON policies (2):** Default-MFA (`system:false`, custom → managed); Default Policy (`system:true`, applies to Everyone, priority 2 → excluded). `exclude system:true` confirmed.
+- **ACCESS_POLICY policies (7):** "Any two factors" (`system:true`, org default — GitHub points here → mapper nulls it, emits no node); Strict-Auth (`system:false`, custom — Datadog points here → managed); and **exactly 5** Okta-created `system:false` policies referenced by no visible app → excluded: Okta Admin Console, Okta Dashboard, Okta Browser Plugin, Okta Account Management Policy, Okta OIN Submission Tester. The drafted "~5 console policies" is precisely 5.
 
-- Groups: `Engineering` (id `g-eng`), `Contractors` (id `g-con`)
-- Apps: `GitHub` (id `a-gh`), `Datadog` (id `a-dd`)
-- App-group assignments (from the live `/apps/{id}/groups` reads): `g-eng -> a-gh`, `g-eng -> a-dd`, `g-con -> a-gh`
-- Group rule `eng-rule`: populates `g-eng` (raw expression stored literally, NOT evaluated)
-- Global session policy `Default-MFA` (id `p-sess`): appliesTo `g-eng`
-- App auth policy `Strict-Auth` (id `p-auth`): protects `a-dd`
+**Surprise #1 (flag for checkpoint decision).** "Okta Account Management Policy" comes back from `type=ACCESS_POLICY` but carries `_embedded.resourceType: "END_USER_ACCOUNT_MANAGEMENT"` — it is NOT an app sign-on policy (it governs authenticator enrollment / password reset / unlock). The drafted "unattached to any visible app" predicate already excludes it correctly (no app references it), so coverage is right WITHOUT special-casing. Open question: also filter `AppAuthPolicy` emission/counting on `_embedded.resourceType === "APP"` for semantic precision (and cleaner live summaries)? That needs `_embedded.resourceType` added to `RawPolicy` (not captured today). **DECIDED (checkpoint 2026-07-02): add the resourceType guard in `map-api.ts`** — emit `AppAuthPolicy` only when `_embedded.resourceType === "APP"`, treating a MISSING `resourceType` as APP (back-compat with the doc-derived fixtures, which omit `_embedded`). The unattached predicate stays the coverage mechanism; the guard just keeps non-app access policies (END_USER_ACCOUNT_MANAGEMENT etc.) out of the node set and live summaries. Needs `_embedded?: { resourceType?: string }` on `RawPolicy`.
 
-Expected results (identical to M1 — that identity IS the test):
+**Surprise #2 (minor, no action).** Apps carry `_links.profileEnrollment` (a `PROFILE_ENROLLMENT` policy) alongside `_links.accessPolicy`. The reader queries only `type=ACCESS_POLICY` + `type=OKTA_SIGN_ON` and the mapper reads only `accessPolicy`, so profile-enrollment policies never enter the dataset. Pinned here so the extra link isn't mistaken for a gap later.
 
-- Mapping the API fixtures produces a `ParsedResource[]` that, through `buildGraph` + `trace`, gives:
-  - `trace("Engineering")` -> apps = [GitHub, Datadog]; globalSessionPolicy = `Default-MFA`; appAuthPolicies = { a-gh: null, a-dd: `Strict-Auth` }
-  - `trace("Contractors")` -> apps = [GitHub]; globalSessionPolicy = null; appAuthPolicies = { a-gh: null }
-  - `summary` -> 2 groups, 2 apps, 1 group rule, 1 global session policy, 1 app auth policy
-- A dedicated equivalence test asserts the graph built from `fixtures/api/` deep-equals (modulo node/edge ordering) the graph built from `fixtures/sample-tenant.tfstate.json`.
+--- CHECKPOINT: review the confirmed exclusion rules + import-id formats with me before implementing. ---
 
-A test passes only when output matches the above. If a documented API shape turns out to differ from what I authored (discoverable only in Phase B against a real tenant), fix the fixtures to match reality and re-run — same discipline as the M1 fixture note.
+2. **Contract deltas — the one sanctioned touch to existing modules, additive only.** Coverage needs two flags that die before reaching `ParsedResource` today:
+   - `parse-tfstate.ts`: add optional `groupType?: string` (Group) and `system?: boolean` (GlobalSessionPolicy) to the union — the tfstate parser leaves both unset (state contents are definitionally customer-managed). Implement the plural-assignments case (replacing the `return null`).
+   - `okta-api.ts`: add `type?: string` to `RawGroup` (live-verified values: `OKTA_GROUP` / `BUILT_IN` / `APP_GROUP`) and `_embedded?: { resourceType?: string }` to `RawPolicy` (the Surprise-#1 guard).
+   - `map-api.ts`: populate both new fields, and gate `AppAuthPolicy` emission on `_embedded.resourceType === "APP"` (missing == APP, so the doc-derived M2 fixtures still emit Strict-Auth). No M2 test breaks: `test/map-api.test.ts` compares at the graph level (`comparable()` strips these fields; `build-graph.ts` never puts them on nodes) and otherwise via `toMatchObject` (partial), and the tfstate path leaves them unset — so the API-vs-tfstate equivalence stays green with no edit.
+   - `model.ts` / `build-graph.ts` / `access-paths.ts`: ZERO changes — the new fields never reach graph nodes. If they need to, that's the smell; stop.
+3. **`src/analysis/coverage.ts` — pure classifier.** `computeCoverage(live: ParsedResource[], state: ParsedResource[]): CoverageReport` implementing the table above. No I/O, no network — the architecture principle extends to `src/analysis/`.
+4. **`src/analysis/import-blocks.ts` — pure generator.** (CLAUDE.md's structure lists only `coverage.ts`; splitting TF-block rendering out from classification is a deliberate extension of that illustrative layout — both modules stay pure.) Unmanaged records -> Terraform 1.5+ `import` blocks. Resource type comes off the record (`App.appType` is already the TF type on both paths); label = sanitized display name (lowercase, `[^a-z0-9_]` -> `_`, prefix if digit-leading, dedupe collisions); assignments labeled `<app>_<group>` with id `<appId>/<groupId>` (names resolved from the live Group/App records). An app whose `appType` is `okta_app_unknown:<mode>` gets a commented-out block naming the unmapped mode — never a guessed type.
+5. **CLI: `coverage` command.** It needs both inputs, so no `--source` option: `--state <path>` (required) plus the live side from env, reusing M2's inert-without-creds behavior (missing env vars -> the existing loud error, exit code 1; missing `--state` -> clear error). Output: text report (per-kind counts, percentages, itemized gaps/stale/excluded with reasons, import blocks when gaps exist) and `--json`. Optional `--imports <path>` writes the blocks as a `.tf` file (file I/O stays in cli/render, not analysis); default such output under `generated/` (gitignored) — writing into `seed/` is only for the deliberate Phase B plan test.
+6. **Tests, then `npm test` green — show actual output.** The oracle below, plus both CLI error paths.
+
+### Test oracle for Phase A (defines "correct" offline)
+
+`fixtures/api/*` and `fixtures/sample-tenant.tfstate.json` describe the SAME logical tenant (proven graph-equivalent in M2), so they are the coverage baseline. Coverage-specific cases build enriched copies IN-TEST — never edit the shared fixtures; the M2 equivalence test depends on them.
+
+- **Baseline** (api fixtures as live, tfstate fixture as state): managed per kind = Groups 2/2, Apps 2/2, GroupRules 1/1, GlobalSessionPolicies 1/1, AppAuthPolicies 1/1, Assignments 3/3; unmanaged 0, stale 0, excluded 0; overall **10/10 = 100%**.
+- **Noise injection** (live side plus: Everyone `BUILT_IN` group; `system: true` "Default Policy" session policy; unattached "Okta Dashboard" access policy): still 100%; excluded itemizes exactly those 3, each with its reason.
+- **Gap injection** (live side plus: group `g-ops` "Click-Ops"; app `a-slack` "Slack" OPENID_CONNECT; assignment `a-gh <- g-ops`): unmanaged is exactly those 3; Groups 2/3, Apps 2/3, Assignments 3/4, overall 10/13; import blocks snapshot-match: `okta_group.click_ops` id `g-ops`, `okta_app_oauth.slack` id `a-slack`, `okta_app_group_assignment.github_click_ops` id `a-gh/g-ops`.
+- **Stale injection** (state side plus a group that isn't live): stale itemizes it; percentages unchanged (still 10/10).
+- **Explicit-default regression** (state app with `authenticationPolicyId: "p-default"`, live `null`): zero AppAuthPolicy gap or stale.
+- **Managed-unattached-policy regression** (a custom app auth policy present in BOTH state and live but attached to no visible app): classifies as `managed` — not `excluded`, not `stale`. Locks in the state-presence-before-exclusion ordering.
+- **Plural parsing** (doc-derived state fixture using `okta_app_group_assignments` for `a-gh` -> `g-eng` + `g-con`): yields 2 assignment records; coverage identical to the singular form.
 
 ### Phase A done when
 
-- `@okta/okta-sdk-nodejs` (or the fetch-client decision) is evaluated and written up here.
-- `fixtures/api/*.json`, `okta-api.ts` (reader interface + HTTP client, no calls at construction), and the pure `map-api.ts` mapper exist.
-- `npm test` is green, including the mapper oracle, the API-vs-tfstate graph-equivalence test, and the CLI missing-creds error path.
-- No live network call has been made and no real credential exists in the repo or its history.
+- Facts pinned and checkpoint passed; contract deltas in with zero graph-layer changes; `coverage.ts` + `import-blocks.ts` pure and tested; `coverage` CLI wired with loud missing-input errors; `npm test` green including every oracle row; still no write path anywhere in the tool.
 
----
+## Phase B — live ground truth (needs the tenant + admin console; do this with me)
 
-## Phase B — live-tenant work (tenant EXISTS as of 2026-07-01; partially done)
+1. Export real state: `cd seed && terraform show -json > ../generated/seed-state.json` (git-ignored).
+2. `npm run dev -- coverage --state generated/seed-state.json` -> expect **100%**, stale 0; excluded itemizes Everyone + Okta Administrators (BUILT_IN), Default Policy (system session policy), and the Okta-created console access policies — and nothing else. Any surprise = a bug or a wrong exclusion rule; investigate before proceeding.
+3. **Click-ops gap:** in the admin console, create a group ("Click-Ops Test") and assign the GitHub app to it. Re-run coverage -> exactly 1 unmanaged group + 1 unmanaged assignment, with import blocks.
+4. **Prove the blocks:** drop them into `seed/imports.tf`, run `terraform plan -generate-config-out=imported.tf` -> the plan shows exactly "2 to import" and no other changes. That plan output is the acceptance criterion for generated blocks.
+5. **Restore the baseline** either way: `terraform apply` the import (brings the click-ops resources under IaC) OR delete them in the console and discard the blocks. Re-run coverage -> 100% again, stale 0.
+6. Record any quirks discovered (shapes, exclusion surprises) here, pinned like the provider notes in CLAUDE.md.
 
-- [x] Provision a free Okta Integrator tenant. ~~Seeding~~ — still open, see below.
-- [x] Create a **read-only** API credential. (Reality check vs. the original plan: SSWS tokens can't be scope-limited — they inherit their creator's permissions. Implemented as an SSWS token minted by a **Read-Only Administrator** user; the OAuth scope list applies only if we ever switch to an OAuth service app. CLAUDE.md rail updated to match.) Values live in git-ignored `.env`.
-- [x] **Live smoke test:** `npm run smoke -- --verify-readonly` — all five endpoints return, pagination handled, write probe 403'd. Raw captures land in `generated/okta-captures/` (git-ignored).
-- [x] **Shape reconciliation (partial):** groups + both policy layers verified live and fixtures corrected (`system` flags added; two fixture bugs vs. the tfstate fixture fixed: group-rule id `gr-eng`, aligned expression strings; GitHub set to OPENID_CONNECT to match its tfstate `okta_app_oauth`).
-- [ ] **Seed the tenant** to mirror the logical fixture (2 groups, 2 apps, 1 group rule, 1 custom global session policy, 1 custom app auth policy) — ideally via Terraform, which doubles as the real `terraform show -json` export deferred from M1. Manual console seeding is acceptable if Terraform setup is deferred.
-- [ ] **Re-verify the two unverified shapes after seeding:** `/api/v1/apps` items (incl. `_links.accessPolicy` on a customer-created app) and `/api/v1/groups/rules` items. Correct fixtures + mapper if reality differs, re-run offline tests.
-- [ ] **Ground-truth acceptance test (the real acceptance criterion, per CLAUDE.md):** pick a test user in the tenant; compare the tool's computed app access + applied policies for that user against what the Okta admin console actually shows. Match = model is right. Divergence = a bug or a misunderstood semantic — investigate before declaring M2 done.
-- [ ] Record any remaining API shape quirks discovered, so they're pinned like the provider resource names in CLAUDE.md.
+## Deferred (do NOT build in M3)
 
-## Deferred (do NOT build in M2)
-
-- Coverage reconciliation + import-block generation (M3) — even though the live `/apps/{id}/groups` read makes the live-vs-state gap visible, computing and reporting that diff is M3.
-- Okta Expression Language evaluation for hypothetical-user traces (still flagged brittle).
-- Web visualization (after the CLI proves the model).
-- Any WRITE operation against Okta. M2 is read-only, full stop.
-- Plan-diff view (`terraform plan -json`).
+- **Attribute-level drift** — exists-in-both-but-differs (e.g. state says SAML, live says OIDC for the same id). Presence only.
+- Generating full resource config — import blocks only; `terraform plan -generate-config-out` owns config generation.
+- User-level resources and kinds outside the model: `okta_user`, per-user app assignments, group memberships, admin roles, auth servers, IdPs, network zones, …
+- Remediation for stale state (`removed` blocks, state surgery) — report only.
+- OEL evaluation; web viz (likely M4 — decide when M3 ships); ANY write operation against Okta.

@@ -11,7 +11,14 @@
 
 /** A normalized resource record — a tagged union build-graph can switch on. */
 export type ParsedResource =
-  | { kind: "Group"; id: string; name: string; address: string }
+  | {
+      kind: "Group";
+      id: string;
+      name: string;
+      address: string;
+      /** Live-only: API group `type` (OKTA_GROUP | BUILT_IN | APP_GROUP). Unset on the tfstate path. */
+      groupType?: string;
+    }
   | {
       kind: "App";
       id: string;
@@ -41,6 +48,8 @@ export type ParsedResource =
       address: string;
       /** Group ids the policy applies to (`values.groups_included`); unordered set. */
       groupsIncluded: string[];
+      /** Live-only: true for Okta's built-in system policies. Unset on the tfstate path. */
+      system?: boolean;
     }
   | { kind: "AppAuthPolicy"; id: string; name: string; address: string }
   | { kind: "AppGroupAssignment"; address: string; appId: string; groupId: string };
@@ -91,8 +100,8 @@ function collectResources(mod: RawModule): RawResource[] {
   return [...here, ...nested];
 }
 
-function normalizeResource(r: RawResource): ParsedResource | null {
-  if (r.mode === "data") return null; // ignore data sources; managed resources only
+function normalizeResource(r: RawResource): ParsedResource[] {
+  if (r.mode === "data") return []; // ignore data sources; managed resources only
   const type = r.type ?? "";
   const values = r.values ?? {};
   const address = r.address ?? "";
@@ -100,56 +109,79 @@ function normalizeResource(r: RawResource): ParsedResource | null {
 
   switch (type) {
     case "okta_group":
-      return { kind: "Group", id, name: str(values.name), address };
+      // groupType is a live-only concern (API `type`); tfstate groups are always
+      // customer-managed, so it stays unset here.
+      return [{ kind: "Group", id, name: str(values.name), address }];
 
     case "okta_group_rule":
-      return {
-        kind: "GroupRule",
-        id,
-        name: str(values.name),
-        address,
-        expression: str(values.expression_value),
-        expressionType: str(values.expression_type) || undefined,
-        populates: strArray(values.group_assignments),
-      };
+      return [
+        {
+          kind: "GroupRule",
+          id,
+          name: str(values.name),
+          address,
+          expression: str(values.expression_value),
+          expressionType: str(values.expression_type) || undefined,
+          populates: strArray(values.group_assignments),
+        },
+      ];
 
     case "okta_policy_signon":
-      return {
-        kind: "GlobalSessionPolicy",
-        id,
-        name: str(values.name),
-        address,
-        groupsIncluded: strArray(values.groups_included),
-      };
+      // `system` is a live-only concern; tfstate policies are customer-managed, unset here.
+      return [
+        {
+          kind: "GlobalSessionPolicy",
+          id,
+          name: str(values.name),
+          address,
+          groupsIncluded: strArray(values.groups_included),
+        },
+      ];
 
     case "okta_app_signon_policy":
-      return { kind: "AppAuthPolicy", id, name: str(values.name), address };
+      return [{ kind: "AppAuthPolicy", id, name: str(values.name), address }];
 
     case "okta_app_group_assignment":
-      return {
-        kind: "AppGroupAssignment",
-        address,
-        appId: str(values.app_id),
-        groupId: str(values.group_id),
-      };
+      return [
+        {
+          kind: "AppGroupAssignment",
+          address,
+          appId: str(values.app_id),
+          groupId: str(values.group_id),
+        },
+      ];
 
-    case "okta_app_group_assignments":
-      // Plural form (all-groups read + dynamic `group` blocks). Deferred to M2, where
-      // it will be validated against a real export. M1 handles the singular form only.
-      return null;
+    case "okta_app_group_assignments": {
+      // Plural form: one `app_id` + a `group` block list (each block has `id`, plus
+      // optional `priority`/`profile`). Confirmed against okta/okta v4.20.0 (see PLAN.md
+      // step-1 findings). In `terraform show -json`, `values.group` is an array; emit one
+      // AppGroupAssignment per block — the state-side analogue of the live all-groups read.
+      const appId = str(values.app_id);
+      const groups: unknown[] = Array.isArray(values.group) ? values.group : [];
+      const records: ParsedResource[] = [];
+      for (const g of groups) {
+        if (g && typeof g === "object") {
+          const groupId = str((g as { id?: unknown }).id);
+          if (groupId) records.push({ kind: "AppGroupAssignment", address, appId, groupId });
+        }
+      }
+      return records;
+    }
 
     default: {
-      if (!isAppType(type)) return null;
+      if (!isAppType(type)) return [];
       const authPolicy = values.authentication_policy;
-      return {
-        kind: "App",
-        id,
-        name: str(values.label),
-        appType: type,
-        address,
-        authenticationPolicyId:
-          typeof authPolicy === "string" && authPolicy.length > 0 ? authPolicy : null,
-      };
+      return [
+        {
+          kind: "App",
+          id,
+          name: str(values.label),
+          appType: type,
+          address,
+          authenticationPolicyId:
+            typeof authPolicy === "string" && authPolicy.length > 0 ? authPolicy : null,
+        },
+      ];
     }
   }
 }
@@ -162,8 +194,7 @@ export function parseTfState(state: unknown): ParsedResource[] {
   }
   const out: ParsedResource[] = [];
   for (const raw of collectResources(root)) {
-    const normalized = normalizeResource(raw);
-    if (normalized) out.push(normalized);
+    out.push(...normalizeResource(raw));
   }
   return out;
 }

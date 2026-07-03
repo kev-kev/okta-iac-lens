@@ -1,11 +1,22 @@
-/** Shared test helpers for loading the sample fixture. Not a test file itself. */
+/** Shared test helpers for loading the sample fixtures. Not a test file itself. */
 
 import { readFileSync } from "node:fs";
 import { buildGraph } from "../src/core/build-graph.js";
 import { parseTfState } from "../src/core/parse-tfstate.js";
+import type { ParsedResource } from "../src/core/parse-tfstate.js";
 import type { OktaGraph } from "../src/core/model.js";
+import { mapApiSnapshot } from "../src/inputs/map-api.js";
+import type {
+  OktaApiSnapshot,
+  RawApp,
+  RawAppGroupAssignment,
+  RawGroup,
+  RawGroupRule,
+  RawPolicy,
+} from "../src/inputs/okta-api.js";
 
 const FIXTURE_URL = new URL("../fixtures/sample-tenant.tfstate.json", import.meta.url);
+const API_FIXTURE_DIR = new URL("../fixtures/api/", import.meta.url);
 
 export function loadFixtureJson(): unknown {
   return JSON.parse(readFileSync(FIXTURE_URL, "utf8"));
@@ -13,6 +24,32 @@ export function loadFixtureJson(): unknown {
 
 export function graphFromFixture(): OktaGraph {
   return buildGraph(parseTfState(loadFixtureJson()));
+}
+
+/** The tfstate fixture as normalized records (the "state" side of coverage). */
+export function stateResources(): ParsedResource[] {
+  return parseTfState(loadFixtureJson());
+}
+
+function readApiFixture<T>(file: string): T {
+  return JSON.parse(readFileSync(new URL(file, API_FIXTURE_DIR), "utf8")) as T;
+}
+
+/** Assemble the API snapshot from `fixtures/api/`, exactly as `readTenantSnapshot` would. */
+export function loadApiSnapshot(): OktaApiSnapshot {
+  return {
+    groups: readApiFixture<RawGroup[]>("groups.json"),
+    apps: readApiFixture<RawApp[]>("apps.json"),
+    groupRules: readApiFixture<RawGroupRule[]>("group-rules.json"),
+    globalSessionPolicies: readApiFixture<RawPolicy[]>("policies-signon.json"),
+    appAuthPolicies: readApiFixture<RawPolicy[]>("app-signon-policies.json"),
+    appGroupAssignments: readApiFixture<Record<string, RawAppGroupAssignment[]>>("apps-groups.json"),
+  };
+}
+
+/** The API fixtures as normalized records (the "live" side of coverage). */
+export function liveResources(): ParsedResource[] {
+  return mapApiSnapshot(loadApiSnapshot());
 }
 
 /**

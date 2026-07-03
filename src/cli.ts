@@ -1,24 +1,19 @@
 #!/usr/bin/env node
 /**
- * CLI entrypoint (commander). Wires the pure core to file I/O and stdout rendering.
+ * CLI entrypoint (commander). Wires the pure core/analysis to file I/O and stdout rendering.
  *
- * Two input sources feed the same graph pipeline:
- *   --source tfstate (default): a `terraform show -json` export, via --state <path>
- *   --source okta: the live tenant, read-only, via OKTA_ORG_URL/OKTA_API_TOKEN env
+ *   summary  / trace    — one input source (--source tfstate | okta)
+ *   coverage            — BOTH sources: live tenant vs Terraform state -> IaC gap
  */
 
+import { writeFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import { buildGraph } from "./core/build-graph.js";
-import { parseTfState } from "./core/parse-tfstate.js";
 import { summarize, trace } from "./core/access-paths.js";
-import { readTfStateFile } from "./inputs/tfstate-file.js";
-import { mapApiSnapshot } from "./inputs/map-api.js";
-import {
-  HttpOktaReader,
-  readOktaConfigFromEnv,
-  readTenantSnapshot,
-} from "./inputs/okta-api.js";
-import { renderSummary, renderTrace } from "./render/cli.js";
+import { computeCoverage } from "./analysis/coverage.js";
+import { generateImportBlocks } from "./analysis/import-blocks.js";
+import { loadDotEnv, loadLiveResources, loadStateResources } from "./inputs/load-resources.js";
+import { renderCoverage, renderSummary, renderTrace } from "./render/cli.js";
 import type { OutputFormat } from "./render/cli.js";
 
 interface SourceOpts {
@@ -28,19 +23,13 @@ interface SourceOpts {
 
 async function loadGraph(opts: SourceOpts) {
   if (opts.source === "okta") {
-    try {
-      process.loadEnvFile(".env"); // optional convenience; env vars set directly also work
-    } catch {
-      /* no .env file — fine if the vars are already exported */
-    }
-    const reader = new HttpOktaReader(readOktaConfigFromEnv());
-    return buildGraph(mapApiSnapshot(await readTenantSnapshot(reader)));
+    loadDotEnv();
+    return buildGraph(await loadLiveResources());
   }
   if (!opts.state) {
     throw new Error("--source tfstate requires --state <path> (a `terraform show -json` export).");
   }
-  const state = await readTfStateFile(opts.state);
-  return buildGraph(parseTfState(state));
+  return buildGraph(await loadStateResources(opts.state));
 }
 
 const sourceOption = () =>
@@ -84,6 +73,35 @@ program
       const graph = await loadGraph(opts);
       const format: OutputFormat = opts.json ? "json" : "text";
       console.log(renderTrace(trace(graph, opts.group), format));
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("coverage")
+  .description("Reconcile the live tenant against Terraform state; report IaC coverage and gaps.")
+  .requiredOption("--state <path>", "path to `terraform show -json` output (the managed baseline)")
+  .option("--json", "output JSON instead of text")
+  .option("--imports <path>", "write generated Terraform import blocks to this .tf file")
+  .action(async (opts: { state: string; json?: boolean; imports?: string }) => {
+    try {
+      loadDotEnv();
+      const state = await loadStateResources(opts.state);
+      const live = await loadLiveResources();
+      const report = computeCoverage(live, state);
+      const format: OutputFormat = opts.json ? "json" : "text";
+
+      console.log(renderCoverage(report, format));
+      if (format === "text" && report.overall.unmanaged > 0) {
+        console.log("");
+        console.log(generateImportBlocks(report, live));
+      }
+      if (opts.imports) {
+        await writeFile(opts.imports, generateImportBlocks(report, live), "utf8");
+        console.error(`Wrote ${report.overall.unmanaged} import block(s) to ${opts.imports}`);
+      }
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
