@@ -29,13 +29,17 @@ describe("layoutGraph (two-lane: resource spine + policy lane)", () => {
     expect(at("a-gh").x).toBe(at("a-dd").x); // apps share a column
   });
 
-  it("places each policy in the lane ABOVE the resource column it gates", () => {
-    // Session policy shares the Group column and sits above it.
+  it("places the session policy in the lane ABOVE its group", () => {
     expect(at("p-sess").x).toBe(at("g-eng").x);
     expect(at("p-sess").y).toBeLessThan(at("g-eng").y);
-    // App auth policy shares the App column and sits above it.
-    expect(at("p-auth").x).toBe(at("a-gh").x);
-    expect(at("p-auth").y).toBeLessThan(at("a-gh").y);
+  });
+
+  it("places the app auth policy to the RIGHT of the specific app it gates, same row", () => {
+    // Strict-Auth (p-auth) protects Datadog (a-dd), so it sits beside a-dd — NOT above the
+    // app column, and NOT next to GitHub (a-gh). This is what stops the protects edge from
+    // running through the intervening GitHub card.
+    expect(at("p-auth").x).toBeGreaterThan(at("a-dd").x);
+    expect(at("p-auth").y).toBe(at("a-dd").y);
   });
 
   it("keeps the spine below the policy lane (rule is not up in the policy row)", () => {

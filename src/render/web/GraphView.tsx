@@ -18,13 +18,16 @@ const EDGE_COLOR: Record<EdgeKind, string> = {
   protects: "#dc2626",
 };
 
-/** Which node handles each edge kind connects. Spine edges run horizontally (right->left);
- * policy edges drop vertically from the policy lane into the resource (bottom->top). */
+/** Which node handles each edge kind connects, matched to the layout:
+ *  - populates / grants: horizontal along the spine (source right -> target left)
+ *  - appliesTo: session policy drops from its lane into the group below (bottom -> top)
+ *  - protects: app policy sits to the RIGHT of its app, so a short horizontal line runs
+ *    from the policy's left into the app's right (no spanning past stacked app cards). */
 const EDGE_HANDLES: Record<EdgeKind, { source: string; target: string }> = {
   populates: { source: "s-right", target: "t-left" },
   grants: { source: "s-right", target: "t-left" },
   appliesTo: { source: "s-bottom", target: "t-top" },
-  protects: { source: "s-bottom", target: "t-top" },
+  protects: { source: "s-left", target: "t-right" },
 };
 
 export interface GraphViewProps {

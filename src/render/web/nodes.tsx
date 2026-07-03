@@ -31,6 +31,8 @@ export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
       <Handle id="s-right" type="source" position={Position.Right} />
       <Handle id="t-top" type="target" position={Position.Top} />
       <Handle id="s-bottom" type="source" position={Position.Bottom} />
+      <Handle id="s-left" type="source" position={Position.Left} />
+      <Handle id="t-right" type="target" position={Position.Right} />
       <div className="okta-node-kind">{KIND_LABEL[data.kind]}</div>
       <div className="okta-node-label">{data.label}</div>
     </div>
