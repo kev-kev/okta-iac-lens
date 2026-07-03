@@ -100,9 +100,108 @@ body {
   border-radius: 4px;
 }
 
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .graph-canvas {
   flex: 1;
   min-height: 0;
+}
+
+/* --- trace panel ----------------------------------------------------------- */
+.trace-panel {
+  width: 300px;
+  flex: none;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.trace-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trace-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.trace-head h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  color: var(--kind-Group);
+}
+
+.clear-btn {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0b1220;
+  color: var(--text);
+}
+
+.trace-panel h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 18px 0 6px;
+}
+
+.trace-apps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trace-apps li {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-name {
+  font-weight: 600;
+}
+
+.app-policy {
+  font-size: 12px;
+  color: var(--kind-AppAuthPolicy);
+}
+
+.app-policy.is-default {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.policy-value {
+  color: var(--kind-GlobalSessionPolicy);
+  font-weight: 600;
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.panel-note {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* --- custom nodes ---------------------------------------------------------- */

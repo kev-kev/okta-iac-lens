@@ -23,9 +23,10 @@ export interface GraphViewProps {
   /** When set, nodes/edges in the set are emphasized and the rest dimmed. null/undefined = no trace. */
   highlight?: HighlightSet | null;
   onNodeClick?: (nodeId: string) => void;
+  onPaneClick?: () => void;
 }
 
-export function GraphView({ graph, highlight, onNodeClick }: GraphViewProps) {
+export function GraphView({ graph, highlight, onNodeClick, onPaneClick }: GraphViewProps) {
   const positions = useMemo(() => layoutGraph(graph), [graph]);
 
   const nodes: OktaFlowNode[] = useMemo(
@@ -74,6 +75,7 @@ export function GraphView({ graph, highlight, onNodeClick }: GraphViewProps) {
         nodeTypes={nodeTypes}
         fitView
         onNodeClick={(_event, node) => onNodeClick?.(node.id)}
+        onPaneClick={() => onPaneClick?.()}
       >
         <Background />
         <Controls />
