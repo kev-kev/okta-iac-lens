@@ -4,25 +4,29 @@ import { trace } from "../../core/access-paths.js";
 import type { TraceResult } from "../../core/access-paths.js";
 import type { GraphEnvelope } from "../envelope.js";
 import { EnvelopeError, parseEnvelope } from "./parse-envelope.js";
-import { highlightForTrace } from "./highlight.js";
+import { deriveCards } from "./derive-cards.js";
+import { highlightForPolicy, highlightForTrace } from "./highlight.js";
 import { GraphView } from "./GraphView.js";
 import { TracePanel } from "./TracePanel.js";
+import { PolicyPanel } from "./PolicyPanel.js";
+
+type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
 
 export function App() {
   const [envelope, setEnvelope] = useState<GraphEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
   const [showLabels, setShowLabels] = useState(true);
 
   const load = useCallback(async (file: File) => {
     try {
       const parsed = parseEnvelope(JSON.parse(await file.text()));
       setEnvelope(parsed);
-      setSelectedGroupId(null);
+      setSelection(null);
       setError(null);
     } catch (e) {
       setEnvelope(null);
-      setSelectedGroupId(null);
+      setSelection(null);
       if (e instanceof EnvelopeError) setError(e.message);
       else if (e instanceof SyntaxError) setError("That file isn't valid JSON.");
       else setError(e instanceof Error ? e.message : String(e));
@@ -39,34 +43,48 @@ export function App() {
   );
 
   const graph = envelope?.graph ?? null;
+  const cards = useMemo(() => (graph ? deriveCards(graph) : null), [graph]);
 
-  /** Only Group nodes can be traced; other kinds are inspect-only (plan rail). */
-  const groupIds = useMemo(() => {
-    const s = new Set<string>();
-    for (const n of graph?.nodes ?? []) if (n.kind === "Group") s.add(n.id);
-    return s;
+  const nameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of graph?.nodes ?? []) m.set(n.id, n.name);
+    return m;
   }, [graph]);
 
   const traceResult = useMemo<TraceResult | null>(() => {
-    if (!graph || !selectedGroupId) return null;
+    if (!graph || selection?.kind !== "group") return null;
     try {
-      return trace(graph, selectedGroupId);
+      return trace(graph, selection.id);
     } catch {
-      return null; // selected group no longer present (e.g. after loading a new graph)
+      return null;
     }
-  }, [graph, selectedGroupId]);
+  }, [graph, selection]);
 
-  const highlight = useMemo(
-    () => (traceResult ? highlightForTrace(traceResult) : null),
-    [traceResult],
-  );
+  const selectedPolicy = useMemo(() => {
+    if (!graph || !cards || selection?.kind !== "policy") return null;
+    const node = graph.nodes.find((n) => n.id === selection.id);
+    const layer =
+      node?.kind === "GlobalSessionPolicy"
+        ? "session"
+        : node?.kind === "AppAuthPolicy"
+          ? "auth"
+          : null;
+    if (!node || !layer) return null;
+    const governed = (cards.resourcesByPolicy.get(node.id) ?? []).map((rid) => ({
+      id: rid,
+      name: nameById.get(rid) ?? rid,
+    }));
+    return { name: node.name, layer, governed } as const;
+  }, [graph, cards, selection, nameById]);
 
-  const onNodeClick = useCallback(
-    (nodeId: string) => {
-      if (groupIds.has(nodeId)) setSelectedGroupId(nodeId);
-    },
-    [groupIds],
-  );
+  const highlight = useMemo(() => {
+    if (!cards) return null;
+    if (selection?.kind === "group" && traceResult) return highlightForTrace(traceResult);
+    if (selection?.kind === "policy") return highlightForPolicy(cards, selection.id);
+    return null;
+  }, [cards, selection, traceResult]);
+
+  const selectedPolicyId = selection?.kind === "policy" ? selection.id : null;
 
   return (
     <div className="app" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -86,8 +104,8 @@ export function App() {
         {envelope && (
           <>
             <span className="meta">
-              source: {envelope.source} · {envelope.graph.nodes.length} nodes ·{" "}
-              {envelope.graph.edges.length} edges · click a group to trace
+              source: {envelope.source} · {envelope.graph.nodes.length} nodes · click a group to
+              trace, or a policy badge to see its reach
             </span>
             <label className="toggle">
               <input
@@ -103,17 +121,27 @@ export function App() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      {graph ? (
+      {cards ? (
         <div className="workspace">
           <GraphView
-            graph={graph}
+            cards={cards}
             highlight={highlight}
+            selectedPolicyId={selectedPolicyId}
             showLabels={showLabels}
-            onNodeClick={onNodeClick}
-            onPaneClick={() => setSelectedGroupId(null)}
+            onSelectGroup={(id) => setSelection({ kind: "group", id })}
+            onSelectPolicy={(id) => setSelection({ kind: "policy", id })}
+            onClear={() => setSelection(null)}
           />
-          {traceResult && (
-            <TracePanel result={traceResult} onClear={() => setSelectedGroupId(null)} />
+          {selection?.kind === "group" && traceResult && (
+            <TracePanel result={traceResult} onClear={() => setSelection(null)} />
+          )}
+          {selection?.kind === "policy" && selectedPolicy && (
+            <PolicyPanel
+              name={selectedPolicy.name}
+              layer={selectedPolicy.layer}
+              governed={selectedPolicy.governed}
+              onClear={() => setSelection(null)}
+            />
           )}
         </div>
       ) : (

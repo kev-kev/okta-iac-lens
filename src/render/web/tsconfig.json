@@ -10,5 +10,13 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["vite-env.d.ts", "main.tsx", "App.tsx", "GraphView.tsx", "nodes.tsx", "TracePanel.tsx"]
+  "include": [
+    "vite-env.d.ts",
+    "main.tsx",
+    "App.tsx",
+    "GraphView.tsx",
+    "nodes.tsx",
+    "TracePanel.tsx",
+    "PolicyPanel.tsx"
+  ]
 }

@@ -1,67 +1,55 @@
 /**
- * Layout oracle: two-lane structure (resource spine + policy lane above), one position per
- * node, no overlaps, deterministic.
+ * Layout oracle (dagre). We don't assert exact coordinates (that's dagre's job and brittle);
+ * we assert the structural invariants that matter: every flow node placed, left-to-right rank
+ * order along the access flow, no overlapping cards, and determinism.
  */
 
 import { describe, expect, it } from "vitest";
-import { layoutGraph } from "../src/render/web/layout.js";
+import { deriveCards } from "../src/render/web/derive-cards.js";
+import { layoutGraph, NODE_HEIGHT, NODE_WIDTH } from "../src/render/web/layout.js";
 import { graphFromFixture } from "./fixture.js";
 
-describe("layoutGraph (two-lane: resource spine + policy lane)", () => {
-  const graph = graphFromFixture();
-  const pos = layoutGraph(graph);
+const flow = deriveCards(graphFromFixture()).flow;
 
+describe("layoutGraph (dagre)", () => {
+  const pos = layoutGraph(flow);
   const at = (id: string) => {
     const p = pos.get(id);
     if (!p) throw new Error(`no position for ${id}`);
     return p;
   };
 
-  it("assigns exactly one position to every node", () => {
-    expect(pos.size).toBe(graph.nodes.length);
-    for (const n of graph.nodes) expect(pos.has(n.id)).toBe(true);
+  it("positions every flow node (and only flow nodes — policies aren't in the flow graph)", () => {
+    expect(pos.size).toBe(flow.nodes.length);
+    for (const n of flow.nodes) expect(pos.has(n.id)).toBe(true);
+    expect(pos.has("p-sess")).toBe(false);
+    expect(pos.has("p-auth")).toBe(false);
   });
 
-  it("orders the resource spine left -> right: rule < group < app", () => {
+  it("lays the access flow out left -> right: rule before group before apps", () => {
     expect(at("gr-eng").x).toBeLessThan(at("g-eng").x);
     expect(at("g-eng").x).toBeLessThan(at("a-gh").x);
-    expect(at("g-eng").x).toBe(at("g-con").x); // groups share a column
-    expect(at("a-gh").x).toBe(at("a-dd").x); // apps share a column
+    expect(at("g-eng").x).toBeLessThan(at("a-dd").x);
   });
 
-  it("places the session policy in the lane ABOVE its group", () => {
-    expect(at("p-sess").x).toBe(at("g-eng").x);
-    expect(at("p-sess").y).toBeLessThan(at("g-eng").y);
-  });
-
-  it("places the app auth policy to the RIGHT of the specific app it gates, same row", () => {
-    // Strict-Auth (p-auth) protects Datadog (a-dd), so it sits beside a-dd — NOT above the
-    // app column, and NOT next to GitHub (a-gh). This is what stops the protects edge from
-    // running through the intervening GitHub card.
-    expect(at("p-auth").x).toBeGreaterThan(at("a-dd").x);
-    expect(at("p-auth").y).toBe(at("a-dd").y);
-  });
-
-  it("keeps the spine below the policy lane (rule is not up in the policy row)", () => {
-    expect(at("gr-eng").y).toBe(at("g-eng").y); // spine nodes share a baseline row
-    expect(at("gr-eng").y).toBeGreaterThan(at("p-sess").y);
-  });
-
-  it("never places two nodes at the same coordinates", () => {
-    const seen = new Set<string>();
-    for (const p of pos.values()) {
-      const key = `${p.x},${p.y}`;
-      expect(seen.has(key)).toBe(false);
-      seen.add(key);
+  it("never overlaps two cards", () => {
+    const ids = flow.nodes.map((n) => n.id);
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = at(ids[i]);
+        const b = at(ids[j]);
+        const overlap =
+          a.x < b.x + NODE_WIDTH &&
+          b.x < a.x + NODE_WIDTH &&
+          a.y < b.y + NODE_HEIGHT &&
+          b.y < a.y + NODE_HEIGHT;
+        expect(overlap, `${ids[i]} overlaps ${ids[j]}`).toBe(false);
+      }
     }
   });
 
   it("is deterministic across runs", () => {
-    const again = layoutGraph(graph);
-    for (const n of graph.nodes) expect(again.get(n.id)).toEqual(pos.get(n.id));
-  });
-
-  it("stacks multiple groups in the column at distinct y", () => {
-    expect(at("g-eng").y).not.toBe(at("g-con").y);
+    const again = layoutGraph(flow);
+    for (const n of flow.nodes) expect(again.get(n.id)).toEqual(pos.get(n.id));
   });
 });

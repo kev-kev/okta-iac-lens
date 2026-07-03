@@ -2,123 +2,119 @@ import { useMemo } from "react";
 import { ReactFlow, Background, Controls, Panel } from "@xyflow/react";
 import type { Edge as RFEdge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { EdgeKind, OktaGraph } from "../../core/model.js";
+import type { EdgeKind } from "../../core/model.js";
+import type { CardModel } from "./derive-cards.js";
 import { layoutGraph } from "./layout.js";
 import { edgeId } from "./highlight.js";
 import type { HighlightSet } from "./highlight.js";
-import { Legend, nodeTypes } from "./nodes.js";
+import { Legend, nodeTypes, ViewerContext } from "./nodes.js";
 import type { OktaFlowNode } from "./nodes.js";
 
-/** Edge color per kind. The two policy layers get their own hues (amber vs red), matched to
- * their policy nodes, so `appliesTo` (session) and `protects` (app) never read as one thing. */
-const EDGE_COLOR: Record<EdgeKind, string> = {
+/** Only spine edges remain in the flow graph now (policies are card attributes). */
+const EDGE_COLOR: Partial<Record<EdgeKind, string>> = {
   populates: "#94a3b8",
   grants: "#2563eb",
-  appliesTo: "#d97706",
-  protects: "#dc2626",
-};
-
-/** Which node handles each edge kind connects, matched to the layout:
- *  - populates / grants: horizontal along the spine (source right -> target left)
- *  - appliesTo: session policy drops from its lane into the group below (bottom -> top)
- *  - protects: app policy sits to the RIGHT of its app, so a short horizontal line runs
- *    from the policy's left into the app's right (no spanning past stacked app cards). */
-const EDGE_HANDLES: Record<EdgeKind, { source: string; target: string }> = {
-  populates: { source: "s-right", target: "t-left" },
-  grants: { source: "s-right", target: "t-left" },
-  appliesTo: { source: "s-bottom", target: "t-top" },
-  protects: { source: "s-left", target: "t-right" },
 };
 
 export interface GraphViewProps {
-  graph: OktaGraph;
-  /** When set, nodes/edges in the set are emphasized and the rest dimmed. null/undefined = no trace. */
+  cards: CardModel;
   highlight?: HighlightSet | null;
-  /** Show the per-edge kind labels ("grants", "protects", …). Default true. */
+  /** The currently selected policy id (to emphasize its badge across every card it's on). */
+  selectedPolicyId?: string | null;
   showLabels?: boolean;
-  onNodeClick?: (nodeId: string) => void;
-  onPaneClick?: () => void;
+  onSelectGroup?: (groupId: string) => void;
+  onSelectPolicy?: (policyId: string) => void;
+  onClear?: () => void;
 }
 
 export function GraphView({
-  graph,
+  cards,
   highlight,
+  selectedPolicyId,
   showLabels = true,
-  onNodeClick,
-  onPaneClick,
+  onSelectGroup,
+  onSelectPolicy,
+  onClear,
 }: GraphViewProps) {
-  const positions = useMemo(() => layoutGraph(graph), [graph]);
+  const { flow, sessionPolicyByGroup, authPolicyByApp } = cards;
+  const positions = useMemo(() => layoutGraph(flow), [flow]);
 
   const nodes: OktaFlowNode[] = useMemo(
     () =>
-      graph.nodes.map((n) => ({
-        id: n.id,
-        type: "okta" as const,
-        position: positions.get(n.id) ?? { x: 0, y: 0 },
-        data: {
-          label: n.name,
-          kind: n.kind,
-          active: highlight ? highlight.nodeIds.has(n.id) : undefined,
-        },
-      })),
-    [graph, positions, highlight],
+      flow.nodes.map((n) => {
+        const policy =
+          n.kind === "Group"
+            ? sessionPolicyByGroup.get(n.id)
+            : n.kind === "App"
+              ? authPolicyByApp.get(n.id)
+              : undefined;
+        return {
+          id: n.id,
+          type: "okta" as const,
+          position: positions.get(n.id) ?? { x: 0, y: 0 },
+          data: {
+            label: n.name,
+            kind: n.kind,
+            active: highlight ? highlight.nodeIds.has(n.id) : undefined,
+            policyName: policy?.name,
+            policyId: policy?.id,
+            policyActive: policy != null && policy.id === selectedPolicyId,
+          },
+        };
+      }),
+    [flow, positions, highlight, selectedPolicyId, sessionPolicyByGroup, authPolicyByApp],
   );
 
   const edges: RFEdge[] = useMemo(
     () =>
-      graph.edges.map((e) => {
+      flow.edges.map((e) => {
         const id = edgeId(e);
         const active = highlight ? highlight.edgeIds.has(id) : undefined;
         const dim = active === false;
-        const handles = EDGE_HANDLES[e.kind];
+        const stroke = EDGE_COLOR[e.kind] ?? "#94a3b8";
         return {
           id,
           source: e.from,
           target: e.to,
-          sourceHandle: handles.source,
-          targetHandle: handles.target,
           label: showLabels ? e.kind : undefined,
           animated: active === true,
           style: {
-            stroke: EDGE_COLOR[e.kind],
+            stroke,
             strokeWidth: active === true ? 2.5 : 1.5,
             strokeDasharray: e.kind === "populates" ? "6 4" : undefined,
             opacity: dim ? 0.12 : 1,
           },
-          // Dim the label bubble in lockstep with its edge, so an out-of-flow label
-          // (e.g. Contractors' unrelated `populates`) recedes instead of floating on top.
-          labelStyle: { fill: EDGE_COLOR[e.kind], fontSize: 11, opacity: dim ? 0.15 : 1 },
-          labelBgStyle: {
-            fill: "#0b1220",
-            fillOpacity: dim ? 0.1 : 0.85,
-            stroke: EDGE_COLOR[e.kind],
-            strokeOpacity: dim ? 0.1 : 0.5,
-          },
+          labelStyle: { fill: stroke, fontSize: 11, opacity: dim ? 0.15 : 1 },
+          labelBgStyle: { fill: "#0b1220", fillOpacity: dim ? 0.1 : 0.85 },
           labelBgPadding: [6, 3] as [number, number],
           labelBgBorderRadius: 6,
         };
       }),
-    [graph, highlight, showLabels],
+    [flow, highlight, showLabels],
   );
 
   return (
     <div className="graph-canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        panOnScroll
-        nodesConnectable={false}
-        onNodeClick={(_event, node) => onNodeClick?.(node.id)}
-        onPaneClick={() => onPaneClick?.()}
-      >
-        <Background />
-        <Controls />
-        <Panel position="top-left">
-          <Legend />
-        </Panel>
-      </ReactFlow>
+      <ViewerContext.Provider value={{ onSelectPolicy: (id) => onSelectPolicy?.(id) }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          panOnScroll
+          nodesConnectable={false}
+          onNodeClick={(_event, node) => {
+            if (node.data.kind === "Group") onSelectGroup?.(node.id);
+          }}
+          onPaneClick={() => onClear?.()}
+        >
+          <Background />
+          <Controls />
+          <Panel position="top-left">
+            <Legend />
+          </Panel>
+        </ReactFlow>
+      </ViewerContext.Provider>
     </div>
   );
 }
