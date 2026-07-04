@@ -10,6 +10,7 @@ import type {
   AppNode,
   GlobalSessionPolicyNode,
   GroupNode,
+  GroupRuleNode,
   NodeKind,
   OktaGraph,
 } from "./model.js";
@@ -84,6 +85,65 @@ export function trace(graph: OktaGraph, groupNameOrId: string): TraceResult {
   }
 
   return { group, apps, globalSessionPolicy, appAuthPolicies };
+}
+
+/** The reverse of TraceResult: an app's inbound access — who reaches it and under what policy. */
+export interface AppTraceResult {
+  app: AppNode;
+  /** Groups whose `grants` edge targets this app, in edge order (deduped). */
+  grantingGroups: GroupNode[];
+  /** Rules that populate any granting group (deduped) — how users land in those groups. */
+  populatingRules: GroupRuleNode[];
+  /** The app's auth policy, or null => org default app sign-on policy (NOT unprotected). */
+  authPolicy: AppAuthPolicyNode | null;
+}
+
+/**
+ * Trace an app's inbound access (the dual of `trace`). `appNameOrId` matches an app id first,
+ * then a display name (exact). Throws if no app matches. Pure id matching, no OEL evaluation.
+ */
+export function traceApp(graph: OktaGraph, appNameOrId: string): AppTraceResult {
+  const apps = graph.nodes.filter((n): n is AppNode => n.kind === "App");
+  const app = apps.find((a) => a.id === appNameOrId) ?? apps.find((a) => a.name === appNameOrId);
+  if (!app) {
+    throw new Error(`App not found: "${appNameOrId}"`);
+  }
+
+  // grants: Group -> App. Collect the granting groups (edge order, deduped).
+  const grantingGroups: GroupNode[] = [];
+  const seenGroup = new Set<string>();
+  for (const edge of graph.edges) {
+    if (edge.kind !== "grants" || edge.to !== app.id || seenGroup.has(edge.from)) continue;
+    const group = graph.nodes.find((n): n is GroupNode => n.kind === "Group" && n.id === edge.from);
+    if (group) {
+      grantingGroups.push(group);
+      seenGroup.add(edge.from);
+    }
+  }
+
+  // populates: GroupRule -> Group. Rules feeding any granting group (deduped).
+  const populatingRules: GroupRuleNode[] = [];
+  const seenRule = new Set<string>();
+  for (const edge of graph.edges) {
+    if (edge.kind !== "populates" || !seenGroup.has(edge.to) || seenRule.has(edge.from)) continue;
+    const rule = graph.nodes.find(
+      (n): n is GroupRuleNode => n.kind === "GroupRule" && n.id === edge.from,
+    );
+    if (rule) {
+      populatingRules.push(rule);
+      seenRule.add(edge.from);
+    }
+  }
+
+  // protects: AppAuthPolicy -> App. Absence => org default (null).
+  const protects = graph.edges.find((e) => e.kind === "protects" && e.to === app.id);
+  const authPolicy = protects
+    ? (graph.nodes.find(
+        (n): n is AppAuthPolicyNode => n.kind === "AppAuthPolicy" && n.id === protects.from,
+      ) ?? null)
+    : null;
+
+  return { app, grantingGroups, populatingRules, authPolicy };
 }
 
 /** Count nodes by kind, for the `summary` command. */

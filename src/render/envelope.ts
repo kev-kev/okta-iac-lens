@@ -8,7 +8,7 @@
  */
 
 import type { OktaGraph } from "../core/model.js";
-import type { CoverageReport } from "../analysis/coverage.js";
+import type { SlimCoverageReport } from "../analysis/coverage.js";
 
 /**
  * Envelope version. Only bump for INCOMPATIBLE changes. Adding the optional `coverage` field is
@@ -27,10 +27,11 @@ export interface GraphEnvelope {
   generatedAt: string;
   graph: OktaGraph;
   /**
-   * Optional M5 coverage overlay. Present only when written by `coverage --viz`. Plain
-   * JSON-serializable (verified). Absent = the viewer renders the graph with no overlay.
+   * Optional coverage overlay (slimmed — no per-item `resource`; see `slimCoverage`). Present
+   * only when written by `coverage --viz`. Plain JSON-serializable. Absent = no overlay. A full
+   * M5 "fat" report is structurally assignable here, so old envelopes still parse.
    */
-  coverage?: CoverageReport;
+  coverage?: SlimCoverageReport;
 }
 
 /** Wrap a graph in the current versioned envelope. Pure — caller supplies the timestamp. */
@@ -38,7 +39,7 @@ export function makeEnvelope(
   graph: OktaGraph,
   source: GraphSource,
   generatedAt: string,
-  coverage?: CoverageReport,
+  coverage?: SlimCoverageReport,
 ): GraphEnvelope {
   const envelope: GraphEnvelope = { version: ENVELOPE_VERSION, source, generatedAt, graph };
   if (coverage) envelope.coverage = coverage;

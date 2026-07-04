@@ -4,7 +4,7 @@
  * Presentation only — no traversal logic here.
  */
 
-import type { GraphSummary, TraceResult } from "../core/access-paths.js";
+import type { AppTraceResult, GraphSummary, TraceResult } from "../core/access-paths.js";
 import type { CoverageBucket, CoverageReport } from "../analysis/coverage.js";
 import { recommend } from "../analysis/recommendations.js";
 
@@ -43,6 +43,28 @@ export function renderTrace(result: TraceResult, format: OutputFormat): string {
   lines.push("");
   const gsp = result.globalSessionPolicy;
   lines.push(`Global session policy: ${gsp ? `${gsp.name} (${gsp.id})` : "(none)"}`);
+  return lines.join("\n");
+}
+
+export function renderAppTrace(result: AppTraceResult, format: OutputFormat): string {
+  if (format === "json") return JSON.stringify(result, null, 2);
+
+  const lines: string[] = [];
+  lines.push(`App: ${result.app.name} (${result.app.id})`);
+  lines.push("");
+  lines.push(`Reached by groups (${result.grantingGroups.length}):`);
+  if (result.grantingGroups.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const g of result.grantingGroups) lines.push(`  - ${g.name} (${g.id})`);
+  }
+  lines.push("");
+  const rules = result.populatingRules;
+  lines.push(`Populated by rules (${rules.length}):`);
+  for (const r of rules) lines.push(`  - ${r.name} (${r.id})`);
+  lines.push("");
+  const p = result.authPolicy;
+  lines.push(`App auth policy: ${p ? `${p.name} (${p.id})` : "— org default app sign-on policy"}`);
   return lines.join("\n");
 }
 

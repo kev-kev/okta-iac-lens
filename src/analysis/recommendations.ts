@@ -7,7 +7,7 @@
  * Guidance only — this never mutates Okta and never writes config. The human runs `terraform`.
  */
 
-import type { CoverageReport, ResourceKind } from "./coverage.js";
+import type { ResourceKind, SlimCoverageReport } from "./coverage.js";
 
 export type RecommendationSeverity = "action" | "info" | "success";
 
@@ -31,7 +31,7 @@ function plural(n: number, noun: string): string {
 }
 
 /** Priority-ordered guidance. Actions first (unmanaged, then stale), then info, then success. */
-export function recommend(report: CoverageReport): Recommendation[] {
+export function recommend(report: SlimCoverageReport): Recommendation[] {
   const recs: Recommendation[] = [];
   const { managed, unmanaged, stale, excluded } = report.overall;
 
