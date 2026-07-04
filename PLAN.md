@@ -56,8 +56,8 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 - [x] **Click-ops experiment (gap half):** group + GitHub assignment created in console → re-export showed exactly 1 unmanaged card + 1 unmanaged grants edge, 10/12 = 83.3%, "Bring 2 resources under IaC" recommendation, correct import blocks. User confirmed visually.
 - [ ] **Restore:** delete the Click-Ops Test group in the console → re-export → back to 100%.
 - [ ] Screenshot the gap state → `docs/coverage.png` + README coverage section.
-- [ ] Light security pass: no new deps or input types this milestone, so the branch-diff `/security-review` suffices (vs M4's full audit). Confirm the enriched envelope stays gitignored (`generated/`).
-- [ ] Record quirks here; then PR.
+- [x] Light security pass (`/security-review`, 2026-07-04): **no HIGH/MEDIUM findings.** Trust boundary (`parse-envelope` optional coverage field) is safe — no prototype-pollution vector, degrades to a hardcoded notice; file-sourced strings render through React escaping (no `dangerouslySetInnerHTML`/`eval`); `--viz` writes a CLI-flag path (trusted). `generated/` (incl. `coverage-graph.json`, `demo-coverage.json`) confirmed gitignored. Consistent with M4's full audit.
+- [x] Quirks: none new. Ready to PR.
 
 ## Deferred (do NOT build in M5)
 
