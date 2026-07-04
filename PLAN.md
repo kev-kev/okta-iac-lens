@@ -52,9 +52,10 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 
 ## Phase B — live ground truth + demo (live reads run on Opus per the standing session note)
 
-- [ ] `coverage --state generated/seed-state.json --viz generated/coverage-graph.json` (read-only) → load in viewer: baseline shows all cards managed, built-ins muted-excluded, coverage 100%, recommendations = confirmation only.
-- [ ] **Recreate the M3 click-ops experiment, visually:** create the test group + GitHub assignment in the console → re-export → overlay shows exactly one unmanaged card + one unmanaged grants edge, panel says 10/12 with the "bring 2 under IaC" recommendation → delete → back to 100%. (The M3 acceptance test, now in pixels.)
-- [ ] Screenshot the gap state → README (coverage section).
+- [x] `coverage --state generated/seed-state.json --viz generated/coverage-graph.json` (read-only) → loaded in viewer: baseline all-managed, built-ins muted-excluded, 100%, recommendations = info + confirmation. Envelope badge data verified (5 managed cards, 2 excluded groups, 3 managed edges, policies bucketed correctly). User confirmed the overlay visually.
+- [x] **Click-ops experiment (gap half):** group + GitHub assignment created in console → re-export showed exactly 1 unmanaged card + 1 unmanaged grants edge, 10/12 = 83.3%, "Bring 2 resources under IaC" recommendation, correct import blocks. User confirmed visually.
+- [ ] **Restore:** delete the Click-Ops Test group in the console → re-export → back to 100%.
+- [ ] Screenshot the gap state → `docs/coverage.png` + README coverage section.
 - [ ] Light security pass: no new deps or input types this milestone, so the branch-diff `/security-review` suffices (vs M4's full audit). Confirm the enriched envelope stays gitignored (`generated/`).
 - [ ] Record quirks here; then PR.
 
@@ -65,3 +66,55 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 - Attribute-level drift; OEL evaluation (unchanged reasons).
 - npm packaging / hosted demo polish.
 - Any WRITE operation against Okta. Read-only, full stop.
+
+---
+
+# Milestone 6 (QUEUED — starts after M5 ships): scale the viewer to enterprise tenants
+
+> Scoped 2026-07-04 (design comparison run at max effort; decisions confirmed: A+C hybrid, include reverse trace, target 5k apps / 10k groups / 60k assignments, auto-threshold keeps the full canvas for small tenants). When M5 merges, promote this section to the top of a rewritten PLAN.md. The durable principle lives in CLAUDE.md ("Scale strategy").
+
+**Goal:** the viewer stays legible and responsive at enterprise scale (target: **5k apps / 10k groups / 60k assignments**) without giving up the local-first static file. Above a size threshold the viewer becomes **query-first**: a scale-independent landing surface (search + inventory lists + coverage) where every canvas render is a **bounded focus view**. At or below the threshold (≤ ~300 nodes), the current whole-graph M4/M5 canvas renders exactly as today.
+
+**The load-bearing design decision:** change the **definition of a view**, not the renderer. No canvas render may depend on org size — every focus view is bounded by construction (visible budget ~150 nodes; hub truncation). Rejected alternatives, recorded: semantic-zoom/clustered overview (Okta data has no natural hierarchy to cluster on; converges to needing focus views at the leaves; highest cost) and renderer swaps (canvas/WebGL solves paint, not legibility). All new logic is PURE and fixture-testable: `traceApp()` (reverse trace) in core, `buildFocusView()` / search index / adjacency indexes in viewer pure modules.
+
+**Scope rails:**
+
+- **Local-first stays.** One static envelope file; in-memory indexes built once at load. No backend, no streaming, no chunked files in M6 (escape hatches recorded in CLAUDE.md for beyond-target scale).
+- **Hub truncation is non-negotiable:** a group granting N ≫ k apps renders top-k edges + ONE aggregate pseudo-node ("…and N−k more — browse list") that opens a panel list. Same for apps with many groups. k ≈ 12, pinned at checkpoint.
+- **Policy semantics unchanged:** two layers distinct, "org default" ≠ unprotected, policies stay card attributes.
+- The synthetic-scale data is generated IN TESTS (seeded, deterministic) — never a committed multi-MB fixture, never from a real tenant.
+
+### Phase A — offline (pause at the checkpoint)
+
+1. **Pin the contracts.** (a) Envelope slimming: the embedded coverage's `items[].resource` (full ParsedResource per item) exists for CLI import-block generation, which the viewer never does; `recommend()` needs only `overall`/`perKind`, panels need `kind/key/name/bucket/reason`. Decide the slimmed shape (projection type vs optional field) + compat handling. (b) `traceApp()` signature (mirror of `trace()`: groups granting the app + rules populating those groups + its auth policy). (c) Budget + k values; auto-threshold value (~300). (d) Virtualized list: tiny dep (version-check per CLAUDE.md) vs hand-rolled.
+
+--- CHECKPOINT: review slimmed-envelope shape, traceApp contract, and budget/threshold constants before building. ---
+
+2. **Core:** pure `traceApp(graph, appNameOrId)` + reverse adjacency; CLI surface `trace --app <nameOrId>` (cheap, same renderer shape).
+3. **Viewer pure modules:** `indexes.ts` (id→node, group→apps, app→groups, name-search index — built once per load); `build-focus-view.ts` (foci + budget → bounded flow graph with aggregate pseudo-nodes; eviction by distance-from-focus, unmanaged-ness boosts retention).
+4. **Landing surface (the C half):** above-threshold files land on search + per-kind virtualized inventory tabs (filter by coverage bucket/name) + the existing CoveragePanel. Below-threshold: today's full canvas, unchanged.
+5. **Focus canvas (the A half):** search/row-click → focus view rendered through the existing GraphView (cards, badges, overlay, dagre — all reused); click neighbor = re-focus; shift-click = add neighborhood under budget; aggregate pseudo-node click = panel list.
+6. **Tests + build green — show output.**
+
+### Test oracle for Phase A
+
+- **Synthetic-scale generator** (pure, seeded): 5k apps / 10k groups / 60k assignments / heavy-tail hubs (incl. one group→800 apps, one app→400 groups).
+- **buildFocusView:** NEVER exceeds budget for any focus in the synthetic org (property-style row); hub focus yields exactly k edges + 1 aggregate node reporting N−k; unmanaged neighbors survive eviction over managed ones at equal distance.
+- **traceApp:** on the fixture tenant, `traceApp("GitHub")` → groups {Engineering, Contractors}, rule eng-rule (via Engineering), auth policy null/org-default; `traceApp("Datadog")` → {Engineering}, Strict-Auth. Mirrors the M1 trace oracle.
+- **indexes:** build over the synthetic org completes within a generous smoke bound; lookups match brute-force scans on sampled ids.
+- **Threshold:** fixture envelope (≤300 nodes) → full-canvas mode; synthetic envelope → query-first mode. Slimmed-envelope compat: M5 fat envelopes still load (compat row), slim envelopes drive panels + recommend() identically.
+- **web:build** green; whole-graph path regression-covered by existing M4/M5 tests.
+
+### Phase B — ground truth + demo
+
+- [ ] Script writes a synthetic-scale envelope to `generated/` (gitignored); load in browser: responsive search, bounded focus views, visible hub truncation, inventory tabs smooth. (No live data involved.)
+- [ ] Live regression: the real Integrator tenant (small) still lands on the full canvas exactly as M5 shipped it. (Live read — Opus per the standing note.)
+- [ ] Screenshot a focus view at scale → README.
+- [ ] Branch `/security-review`; PR.
+
+### Deferred (do NOT build in M6)
+
+- Semantic-zoom/clustered overview; adjacency-matrix density mode (recorded alternatives).
+- Chunked envelopes / SQLite-wasm (beyond-target scale escape hatches); any backend.
+- Click-ops attribution via System Log (`okta.logs.read` — separate backlog item, M7 candidate).
+- Plan-diff view; attribute drift; OEL; write operations (never).
