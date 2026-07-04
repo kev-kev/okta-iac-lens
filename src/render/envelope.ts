@@ -8,8 +8,13 @@
  */
 
 import type { OktaGraph } from "../core/model.js";
+import type { CoverageReport } from "../analysis/coverage.js";
 
-/** Bump when the envelope shape changes incompatibly; the viewer rejects mismatches. */
+/**
+ * Envelope version. Only bump for INCOMPATIBLE changes. Adding the optional `coverage` field is
+ * additive — a v1 file without it stays valid, and a viewer that ignores it renders the graph —
+ * so no bump is needed for M5.
+ */
 export const ENVELOPE_VERSION = 1;
 
 export type GraphSource = "tfstate" | "okta";
@@ -21,6 +26,11 @@ export interface GraphEnvelope {
   /** ISO-8601 timestamp of when the export was produced. */
   generatedAt: string;
   graph: OktaGraph;
+  /**
+   * Optional M5 coverage overlay. Present only when written by `coverage --viz`. Plain
+   * JSON-serializable (verified). Absent = the viewer renders the graph with no overlay.
+   */
+  coverage?: CoverageReport;
 }
 
 /** Wrap a graph in the current versioned envelope. Pure — caller supplies the timestamp. */
@@ -28,6 +38,9 @@ export function makeEnvelope(
   graph: OktaGraph,
   source: GraphSource,
   generatedAt: string,
+  coverage?: CoverageReport,
 ): GraphEnvelope {
-  return { version: ENVELOPE_VERSION, source, generatedAt, graph };
+  const envelope: GraphEnvelope = { version: ENVELOPE_VERSION, source, generatedAt, graph };
+  if (coverage) envelope.coverage = coverage;
+  return envelope;
 }

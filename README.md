@@ -19,6 +19,9 @@ current milestone.
 - **Visualize** (M4) — a local, static web viewer renders the access flow (group rule → group →
   app) with each resource's **session policy** and **app auth policy** shown as attributes on
   its card. Click a group to trace its access; click a policy badge to see everything it governs.
+- **Coverage overlay** (M5) — the viewer badges every card and assignment edge as managed /
+  not-in-Terraform / Okta-managed, with a coverage %, per-kind breakdown, and prioritized
+  **recommended steps** for closing the gap — the same guidance the `coverage` CLI prints.
 
 ### Access-path viewer
 
@@ -27,6 +30,15 @@ current milestone.
 The two policy layers are kept visually distinct — a group's **session policy** (gates sign-in
 to Okta) and an app's **auth policy** (gates that one app) are different things, never merged.
 An app with no auth policy shows **"org default,"** never blank.
+
+### Coverage overlay
+
+![okta-iac-lens coverage overlay](docs/coverage.png)
+
+A resource created outside Terraform (here, a click-ops group and its app assignment) is flagged
+**not in Terraform** on the card and its `grants` edge, the coverage panel drops below 100%, and
+the recommended steps say exactly how to bring it under IaC (`coverage --imports` → `terraform
+plan`). Run `coverage --viz <path>` to produce a graph the viewer can open.
 
 ## Commands
 

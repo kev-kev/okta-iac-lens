@@ -1,120 +1,120 @@
 # PLAN.md — current milestone
 
-Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 4 ships, rewrite this for M5.
+Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 5 ships, rewrite this for M6.
 
-> **Status of M1 (shipped):** `terraform show -json` -> `ParsedResource[]` -> `OktaGraph` -> `trace()`/`summary`, tested against `fixtures/sample-tenant.tfstate.json`.
->
-> **Status of M2 (shipped):** live read-only reader emits the same `ParsedResource[]`; API-vs-tfstate graph equivalence proven offline; ground-truth acceptance vs the admin console passed on the seeded Integrator tenant. Read-only rail verified live (write probe 403s).
->
-> **Status of M3 (shipped):** `coverage` command reconciles live tenant vs state over the shared `ParsedResource[]` seam (presence-first classification), generates import blocks confirmed against okta/okta v4.20.0. Ground truth passed live: baseline 10/10 = 100%; a click-ops gap surfaced as exactly 2 unmanaged; generated blocks proved out with `terraform plan: 2 to import, 0 to change`; restore returned to 100%.
+> **Shipped:** **M1** static trace (`terraform show -json` → `ParsedResource[]` → `OktaGraph` → `trace`/`summary`). **M2** live read-only reader emitting the same `ParsedResource[]`; graph equivalence + admin-console ground truth passed. **M3** `coverage` reconciliation (presence-first classification over the shared seam) + import blocks confirmed against okta/okta v4.20.0; live click-ops ground truth passed (`plan: 2 to import, 0 to change`). **M4** static web viewer (Vite + React Flow + dagre; policies as card attributes; group-trace + policy-sharing interactions); live ground truth passed; CI; pre-PR security review clean.
 
-## Milestone 4: web visualization of access paths
+## Milestone 5: coverage overlay + recommended steps
 
-> **Design revision (2026-07-03, mid-Phase-A, from hands-on review).** Two changes to the original plan below, made because the hand-rolled layout produced edges running through cards and the policy-node encoding was the root cause:
-> 1. **Layout: adopted dagre** (`@dagrejs/dagre` 3.0.0, MIT) for layered left-to-right layout. The "auto-layout deferred" rail below is lifted — the simple layout became unusable at fixture scale (edge-through-node), which was the stated trigger. `layout.ts` is now a thin dagre wrapper.
-> 2. **Policies are card ATTRIBUTES, not nodes.** `deriveCards()` (pure) splits the graph into a flow-only DAG (rule/group/app) plus policy-as-attribute maps; each group card shows its Session policy, each app card its Auth policy. This is the relational-vs-attribute-encoding call (Munzner): the flow is the relationship we analyze (edges), policies are properties (badges). Sharing is recovered on demand — clicking a policy badge highlights every resource it governs (`highlightForPolicy` + `PolicyPanel`). The two-layer distinctness and org-default rules below are UNCHANGED and still enforced (amber session badge vs red auth badge; "org default" never blank). Where the steps below say "policy nodes / distinct edge styling for appliesTo vs protects," read "distinct policy BADGES"; `appliesTo`/`protects` no longer appear as drawn edges.
+**Goal:** fuse the project's two differentiated capabilities into one surface. The M4 viewer learns what the M3 engine knows: every card badges as **managed / not in Terraform / Okta-managed**, unmanaged assignments show on their edges, a coverage panel gives the % and itemizes gaps — and a new **recommended-steps** list (pure, derived from the report) tells the user exactly how to raise their IaC coverage, in both the CLI `coverage` output and the viewer panel.
 
-**Goal:** the "visualizes access paths" promise from the project's own description, in pixels. A **local-first, fully static** web viewer (Vite + React Flow, in `src/render/web/`) that loads a graph exported by a new `export` CLI command and renders the access graph with the **two policy layers visually distinct**; clicking a group highlights its full trace (apps + both policy layers), matching CLI `trace` semantics exactly. No server, no credentials near the browser, no live calls from the viewer — it opens a JSON file.
-
-**The load-bearing design decision:** the viewer imports the SAME pure core the CLI uses. `src/core/` is pure ESM with zero Node-only imports, so `trace()`/`summarize()` run in the browser via Vite unchanged; the interchange format is the serialized `OktaGraph` (already plain arrays by design — model.ts built it to be snapshotted). **No traversal logic is reimplemented in UI code.** If the viewer needs a computation core doesn't provide, add it as a pure function and test it against fixtures — never fork semantics into a component. A viewer-side "parallel trace" is the M2 design smell wearing a new hat; stop and reconsider.
+**The load-bearing design decision:** coverage reaches the viewer through the SAME envelope, as an **optional additive `coverage` field** — no version bump (absent field = no overlay; unknown fields were never rejected), no second file, no viewer network I/O, no creds near the browser. It's written by the `coverage` command itself (new `--viz <path>` flag) because that command already holds both inputs; the embedded `graph` is built from the live resources already fetched — **zero extra API calls**. Recommendations are never serialized: a pure `recommend(report)` is the single source of truth, called by the CLI renderer and the viewer alike. If the viewer needs coverage logic the analysis layer doesn't export, add it as a pure function — never fork classification semantics into UI code (the standing rule).
 
 **Scope rails:**
 
-- **Trace interaction only.** No coverage overlay (M5 candidate), no plan-diff, no editing, no animation beyond select/highlight/dim.
-- **Static viewer.** File open / drag-drop only. A `serve` command, live-tenant mode in the browser, or any URL-fetching in the viewer: out.
-- **Read-only against Okta, as always.** The only live touch in M4 is `export --source okta` (existing M2 reader), and only in Phase B.
-- **Fixture-scale layout.** A hand-rolled layered layout (pure function, no dependency) is sufficient for tens of nodes. Auto-layout libraries (dagre/elk) are deferred until a real tenant makes the simple layout unusable.
+- **Zero new dependencies.** Everything builds on `computeCoverage`, the envelope, and the existing viewer. If a step seems to need a dep, stop and reconsider.
+- **Stale = panel list only** (decided at scoping): stale resources get NO card — the canvas stays a truthful picture of the live tenant. Ghost cards are deferred.
+- **Recommendations are guidance only** — they never mutate Okta and never write config; the human runs `terraform`. Read-only discipline holds everywhere, as always.
+- **Presence-only, still.** The overlay visualizes M3's buckets; no attribute drift, no new classification logic.
+- Users remain out of scope.
 
-### The two policy layers, now in pixels (do not undo the model's core rule)
+### Where each bucket lands in the viewer
 
-The viewer must make `GlobalSessionPolicy` and `AppAuthPolicy` **visually unmistakable as different things**: distinct node styling AND distinct edge styling for `appliesTo` vs `protects`, and a legend that names them ("Global session policy — gates sign-in to Okta" / "App auth policy — gates a specific app"). The absence semantic carries over too: an app with no `protects` edge renders as **"org default app policy"**, never as unprotected/bare (model.ts rule, verified live in M2/M3).
+- **Group / App / GroupRule cards** → badge by bucket: `unmanaged` prominent ("NOT IN TERRAFORM"), `managed` subtle, `excluded` muted ("Okta-managed"). Bucket lookup joins the report's `(kind, key)` items to card ids.
+- **AppGroupAssignment buckets** → they're EDGES, not cards: an unmanaged `grants` edge gets distinct styling (the M3 click-ops gap was a group + an assignment — both must be visible).
+- **Policy buckets** → policies are card *attributes* (M4), so coverage marks the policy **badge** itself, preserving the M4 encoding. The two layers stay visually distinct, and "org default" semantics are untouched.
+- **Stale** → coverage panel list (kind + name), no canvas presence. **Excluded** → itemized in the panel with reasons, muted on canvas.
+- Overlay is ON by default when the envelope carries `coverage`, with a toggle; loading a coverage-less export renders exactly as M4 does today (compat is an oracle row).
+- Panel behavior: the coverage panel (%, per-kind rows, stale/excluded lists, recommendations) shows when nothing is selected; group-trace / policy panels take over on selection, Clear returns to coverage.
 
-### Interchange format (pin at checkpoint)
+## Phase A — offline, fixture-driven (pause at the checkpoint)
 
-`export` writes a versioned envelope, so the viewer can reject foreign/stale files with a clear message:
+1. **Pin the two contracts.** (a) Envelope: `coverage?: CoverageReport` — confirm `CoverageReport` is plain JSON-serializable data end-to-end (it is by construction; verify round-trip). `parse-envelope` validates the field's shape when present, tolerates absence. (b) Command surface: `coverage --viz <path>` (embedded graph = live side). Sanity-check that `recommend()` and any new viewer helpers can stay browser-safe (no Node imports).
 
-```json
-{ "version": 1, "source": "tfstate" | "okta", "generatedAt": "<ISO8601>", "graph": { "nodes": [...], "edges": [...] } }
-```
+--- CHECKPOINT: confirm envelope shape + command surface before building. ---
 
-The `graph` value is the untransformed `OktaGraph`. Edges carry no ids in the model; the viewer derives React Flow ids as `${kind}:${from}:${to}` (the same composite the M2 equivalence test sorts on).
+2. **`src/analysis/recommendations.ts`** — pure `recommend(report: CoverageReport): Recommendation[]`, priority-ordered per the backlog spec this milestone consumes: `unmanaged > 0` → headline "bring N under IaC" with per-kind counts and the exact path (`coverage --imports <file>` → add blocks → `terraform plan`); `stale > 0` → remove-from-config-or-investigate; `excluded` → informational (not a gap); 100% → positive confirmation. Each item: `{severity, title, detail}`.
+3. **CLI wiring.** `coverage` text output appends a "Recommended steps" section; `--json` gains a `recommendations` field (additive). New `--viz <path>` writes the enriched envelope.
+4. **Viewer pure modules first:** extend `parse-envelope` (optional field validation); new `coverage-badges.ts` — `(report) → {bucketByNodeId, bucketByEdgeId(grants), bucketByPolicyId}` maps the components consume.
+5. **Viewer UI:** card + policy-badge bucket styling, unmanaged-`grants` edge styling, overlay toggle, `CoveragePanel` (%, per-kind, stale + excluded lists, recommendations via the imported `recommend()`).
+6. **Tests + build green — show output.** Oracle below; `npm test` and `npm run web:build`.
 
-## Phase A — fixture-driven (no live data, no credentials; pause at the checkpoint)
+### Test oracle for Phase A (same fixture tenant; reuse the M3 in-test injections)
 
-1. **Dependency evaluation (CLAUDE.md rule: check before adding).** Record here: current versions, last release, maintenance state for `@xyflow/react` (React Flow's current package name — verify; the `reactflow` package was superseded), `react`/`react-dom`, `vite`, `@vitejs/plugin-react`. Confirm React Flow's license (MIT expected) and that the pure-core-in-browser assumption holds (no Node built-ins anywhere under `src/core/` — grep it). Decide single-package layout: root `package.json` gains devDeps + `web`/`web:build` scripts with Vite rooted at `src/render/web/`; a separate web `tsconfig` adds `DOM` lib + JSX. No workspaces unless something forces them.
-
-### Dependency evaluation (step 1 writeup, recorded 2026-07-03)
-
-**Decision: add the deps — all current, MIT, actively maintained, and compatible with this repo's Node 24 / ESM setup. No blockers; the milestone's core assumption holds.**
-
-| package | version | license | note |
-|---|---|---|---|
-| `@xyflow/react` | 12.11.1 | MIT | Current pkg (superseded `reactflow`). Published ~2026-06-23 (~10 days ago) — actively maintained, patch cadence. |
-| `react` / `react-dom` | 19.2.7 | MIT | React Flow peers are `react >=17`, so **React 19 is fully supported** — the compatibility risk I flagged is a non-issue. |
-| `vite` | 8.1.3 | MIT | engines `^20.19 || >=22.12`; local Node is v24.14 — fine. |
-| `@vitejs/plugin-react` | 6.0.3 | MIT | peer `vite ^8.0.0` — aligns exactly with Vite 8. The tight 6↔8 peer coupling is itself evidence of coordinated, current maintenance. |
-
-- **Pure-core-in-browser assumption CONFIRMED.** Grep of `src/core/` for `node:`/`fs`/`path`/`url`/`process`/`__dirname`/`Buffer`/`require(` — zero hits; and `src/core/` imports nothing from `inputs/`/`render/`/`analysis/`. `import('./src/core/access-paths.ts')` resolves clean with all transitive deps. So `trace()`/`summarize()` run in the browser via Vite unchanged, exactly as the load-bearing decision assumes.
-- **Layout decision: single package, no workspaces.** Root `package.json` gains the 5 devDeps above + `web` (Vite dev server) and `web:build` (static bundle) scripts, Vite rooted at `src/render/web/`. A second `tsconfig` (`src/render/web/tsconfig.json`) extends the root and adds `lib: ["DOM","DOM.Iterable"]` + `jsx: "react-jsx"`; the root config stays Node/`NodeNext` so vitest and the CLI are untouched. Vite resolves the repo's `.js`-extension ESM imports natively, so core imports need no change.
-- **Testing-surface decision (flagged in pre-flight):** NO React component unit tests in M4 — no `jsdom`/`@testing-library/react`. The three pure viewer modules (parse-envelope, layout, highlight) are DOM-free and fully unit-tested; components are verified by `web:build` (exit 0 + bundle) plus manual acceptance (Phase B). Keeps the dep surface to the 5 above. Revisit only if component logic grows non-trivial.
-- **Sources:** npm registry (`registry.npmjs.org/{@xyflow/react,react,vite,@vitejs/plugin-react}`), [xyflow releases](https://github.com/xyflow/xyflow/releases).
-
---- CHECKPOINT: review the dependency writeup + the pinned envelope schema before scaffolding. ---
-
-2. **`export` CLI command.** Same input options as `summary`/`trace` (`--source tfstate|okta`, `--state <path>`), plus `-o <path>` (default `generated/graph.json` — gitignored territory). Writes the envelope above. Reuses `loadGraph`; no new I/O paths. Missing-creds and missing-state errors behave exactly like the existing commands.
-3. **Viewer pure modules first (testable with zero DOM):**
-   - `parse-envelope.ts` — validate version/shape, actionable errors ("not an okta-iac-lens export", "unsupported version").
-   - `layout.ts` — layered columns by kind: GroupRule | Group | App, session policies flanking groups, app policies flanking apps; pure `(graph) -> Map<nodeId, {x,y}>`; deterministic.
-   - `highlight.ts` — `(graph, traceResult) -> { nodeIds, edgeIds }`: the selected group, its granted apps, its session policy, each app's auth policy, and exactly the `grants`/`appliesTo`/`protects` edges between them. Built ON `trace()` output, not re-derived from raw edges.
-4. **Scaffold + render.** Vite app in `src/render/web/`: file-open + drag-drop -> parse-envelope -> React Flow canvas. Custom node component per `NodeKind` (5), distinct edge styles per `EdgeKind` (4), the policy-layer legend, node labels = `name`. `npm run web` serves it; `npm run web:build` must produce a static bundle.
-5. **Trace interaction.** Click a Group -> run `trace()` (the imported core function) -> highlight set lights up, everything else dims; a detail panel lists what the CLI prints: granted apps with per-app policy or "org default app policy", plus the session policy or "(none)". Click elsewhere clears. Non-Group nodes: select/inspect only, no trace.
-6. **Tests + build green.** vitest for the three pure modules against the fixture graph; the export-command snapshot test; then `npm test` AND `npm run web:build` — show actual output of both.
-
-### Test oracle for Phase A (fixture tenant, same as M1–M3)
-
-- **Export:** `export --state fixtures/sample-tenant.tfstate.json` -> envelope with `version: 1`, `source: "tfstate"`, and `graph` deep-equal to `buildGraph(parseTfState(fixture))`. Parsing that file back through `parse-envelope` returns an identical graph (round-trip).
-- **parse-envelope:** rejects `{version: 2}`, missing `graph`, and non-envelope JSON, each with a distinct actionable message.
-- **layout:** every node gets exactly one position; all Groups share the group column, Apps the app column; no two nodes at identical coordinates; output is deterministic across runs.
-- **highlight for `Engineering`:** nodes = exactly {g-eng, a-gh, a-dd, p-sess, p-auth}; edges = exactly {grants:g-eng:a-gh, grants:g-eng:a-dd, appliesTo:p-sess:g-eng, protects:p-auth:a-dd}. Note a-gh contributes NO protects edge — org default.
-- **highlight for `Contractors`:** nodes = exactly {g-con, a-gh}; edges = exactly {grants:g-con:a-gh}. No policy nodes — Contractors has no session policy and GitHub is org-default.
-- **Build:** `web:build` exits 0 and emits a static bundle.
+- **recommend():** baseline (100%) → exactly one confirmation item; gap injection (Click-Ops group + Slack + assignment) → headline "3 unmanaged" with per-kind breakdown mentioning `--imports`; stale injection → a stale-guidance item; noise injection → informational-only, no action items.
+- **Envelope:** with-coverage round-trip preserves graph AND report; a coverage-less v1 file parses exactly as today (no overlay, no crash) — the compat row; a malformed `coverage` field **degrades gracefully** (decision B) — graph still renders, overlay dropped, `notice` set — rather than rejecting the file.
+- **coverage-badges:** gap injection → `bucketByNodeId` marks exactly `g-ops`/`a-slack` unmanaged and fixtures managed; `bucketByEdgeId` marks exactly `grants:a-gh… (g-ops)` unmanaged; noise injection → Everyone/system-policy ids excluded.
+- **CLI:** `--viz` file's `graph` deep-equals the graph built from the live-side resources; text output contains "Recommended steps"; JSON parses with `recommendations`.
 
 ### Phase A done when
 
-- Dependency writeup recorded here and checkpoint passed; `export` + the three pure modules + the viewer exist; every oracle row passes; `npm test` and `npm run web:build` both green; viewer verified by hand against `generated/graph.json` from the M1 fixture; no live call made, no credential touched.
+- Contracts pinned + checkpoint passed; `recommendations.ts`, CLI wiring, `coverage-badges`, and the viewer UI exist; every oracle row passes; `npm test` + `npm run web:build` green; no live call made; zero new dependencies confirmed.
 
-## Phase B — ground truth + demo polish (small; live read runs on Opus per the session note)
+## Phase B — live ground truth + demo (live reads run on Opus per the standing session note)
 
-- [x] `export --source okta -o generated/live-graph.json` (read-only, Integrator tenant) — DONE. 14 nodes / 7 edges. `deriveCards` verified against the live export (data ground truth, matches the M3 console check): Engineering→Default-MFA, Everyone→Default Policy, Contractors/Okta Administrators→(none); Datadog→Strict-Auth, GitHub→org default. The 4 Okta-created console app-auth policies attach to no visible app and drop out of the viewer (the same noise M3 excluded — intended under attribute encoding).
-- [ ] **Manual acceptance checklist (visual; reworded for the badge design):** load `generated/live-graph.json`; the flow lays out rule→group→app with **no edge crossing a card**; Engineering's **Session policy** badge = Default-MFA, Datadog's **Auth policy** badge = Strict-Auth, GitHub's = "org default"; the two badge layers read as distinct (amber session vs red auth); clicking **Engineering** highlights GitHub + Datadog; clicking a **policy badge** highlights every card it governs; built-in groups (Everyone, Okta Administrators) render sensibly.
-- [x] Screenshot the viewer → `docs/viewer.png` (referenced by `README.md`). Reviewed: no tokens/URLs/PII in pixels; shows the live-graph render.
-- [x] **CI (the distribution slice):** `.github/workflows/ci.yml` runs root `tsc`, `web:typecheck`, `npm test`, and `web:build` on PRs/pushes to main.
-- [x] **Recorded quirks:** (1) core is browser-safe as assumed — no Node built-ins reached the bundle. (2) Under attribute encoding, a policy attached to no *visible* resource is invisible in the viewer (the 4 Okta console app policies) — intended, mirrors M3 coverage exclusion; if a real orphaned custom policy ever needs surfacing, that's a viewer feature, not a bug. Add any browser quirks found during the visual check.
-- [x] **Final M4 step — comprehensive security review (2026-07-03). Result: NO critical/high findings; one informational.**
-  - **Git history (paths + content):** every file ever committed inventoried — no `.env`, no real tfstate (fake fixture only), no captures/`generated/` ever entered history; content grep across all commits found zero token values, private keys, or client secrets (only prose describing the auth model). No 42-char token-shaped strings anywhere. The once-committed `.claude/settings.local.json` held benign permission globs only.
-  - **Credential handling:** token read from env only, sent only in the `Authorization` header, never in URLs, never logged; the missing-creds error names the variable, not values.
-  - **Viewer:** no `dangerouslySetInnerHTML`/`eval`/`innerHTML` (React default escaping throughout); zero network calls (fully static). Untrusted-JSON path (`parseEnvelope`) validates shape; `JSON.parse` is prototype-pollution-safe and ids land in `Map`s. Worst case from a hostile graph.json is a hung tab — acceptable for a local tool. (Robustness note, not security: nodes aren't per-element validated, so a malformed node renders as blank text.)
-  - **Supply chain:** `npm audit` 0 vulnerabilities; only install script in the tree is esbuild's (standard Vite toolchain, dev-time). CI references no secrets and runs read-only build/test. Hardening option (not required): pin action versions to SHAs instead of `@v4` tags.
-  - **Informational finding (RESOLVED 2026-07-03):** the one finding was the test-tenant subdomain hardcoded in `seed/main.tf` — not a credential (org URLs are user-facing; disposable free tenant), but it named a live endpoint in a public repo. Fixed by finishing the pattern the file already used for the token: `org_name`/`base_url`/`api_token` are now all sourced from the environment (`OKTA_ORG_NAME`/`OKTA_BASE_URL`/`OKTA_API_TOKEN`, confirmed against provider v4.20.0 docs). No tenant-specific value remains in tracked files.
+- [x] `coverage --state generated/seed-state.json --viz generated/coverage-graph.json` (read-only) → loaded in viewer: baseline all-managed, built-ins muted-excluded, 100%, recommendations = info + confirmation. Envelope badge data verified (5 managed cards, 2 excluded groups, 3 managed edges, policies bucketed correctly). User confirmed the overlay visually.
+- [x] **Click-ops experiment (gap half):** group + GitHub assignment created in console → re-export showed exactly 1 unmanaged card + 1 unmanaged grants edge, 10/12 = 83.3%, "Bring 2 resources under IaC" recommendation, correct import blocks. User confirmed visually.
+- [ ] **Restore:** delete the Click-Ops Test group in the console → re-export → back to 100%.
+- [ ] Screenshot the gap state → `docs/coverage.png` + README coverage section.
+- [x] Light security pass (`/security-review`, 2026-07-04): **no HIGH/MEDIUM findings.** Trust boundary (`parse-envelope` optional coverage field) is safe — no prototype-pollution vector, degrades to a hardcoded notice; file-sourced strings render through React escaping (no `dangerouslySetInnerHTML`/`eval`); `--viz` writes a CLI-flag path (trusted). `generated/` (incl. `coverage-graph.json`, `demo-coverage.json`) confirmed gitignored. Consistent with M4's full audit.
+- [x] Quirks: none new. Ready to PR.
 
-## Backlog — "Recommended steps to increase IaC coverage" (feature request 2026-07-03)
+## Deferred (do NOT build in M5)
 
-Surfaced right next to the coverage % — in the CLI `coverage` output now, and in the M5 viewer coverage overlay later — a short, prioritized, plain-language list of what the user can do to bring more of their Okta under Terraform. (Not an M4 item; recorded here so it survives the M4→M5 plan rewrite. Scoping calls below are mine — adjust when we pick it up.)
+- Ghost cards for stale resources; any canvas presence for non-live resources.
+- Plan-diff view — now cheaper (it's "the next overlay"), but still its own milestone.
+- Attribute-level drift; OEL evaluation (unchanged reasons).
+- npm packaging / hosted demo polish.
+- Any WRITE operation against Okta. Read-only, full stop.
 
-- **Pure and derived, never hardcoded.** New pure module `src/analysis/recommendations.ts`: `recommend(report: CoverageReport): Recommendation[]`. Every suggestion is computed from the coverage buckets, so it can't drift from the actual tenant state and unit-tests against the same oracle fixtures as `coverage`. Same purity rail as the rest of `src/analysis`.
-- **Content, ordered by impact:**
-  - `unmanaged > 0` → the headline action: "Bring N resources under IaC," broken down by kind, with the exact path (`coverage --imports <file>` → add the generated blocks → `terraform plan` to import). Prioritize kinds by count / lowest per-kind coverage.
-  - `stale > 0` → "N resources are in Terraform but not the tenant — remove them from config, or investigate drift."
-  - `excluded` → informational: "N resources are Okta-managed (built-ins/system) and can't be Terraformed; they're excluded from the %, not a gap."
-  - 100% managed → positive confirmation, plus optional next-level nudges.
-- **Rendered** in the CLI coverage text/JSON, and (M5) as a panel beside the viewer's coverage overlay — the two pair naturally, so this is a strong M5 companion to that overlay.
-- **Rail:** guidance only. It never mutates Okta and never writes config on its own; the human still runs `terraform`. Read-only discipline holds.
+---
 
-## Deferred (do NOT build in M4)
+# Milestone 6 (QUEUED — starts after M5 ships): scale the viewer to enterprise tenants
 
-- **Coverage overlay in the viewer** (managed/unmanaged/excluded badges) — the natural M5, pulling M3's report into the same canvas; pairs with the recommended-steps panel above.
-- `serve` command / live mode in the browser; any viewer network I/O.
-- Plan-diff view (`terraform plan -json`) — sequenced after viz on purpose; it lands as a before/after view in this viewer.
-- Auto-layout libraries; large-tenant performance work (virtualization, clustering).
-- Attribute-level drift; OEL evaluation (both still deferred, same reasons as M3).
-- Any WRITE operation against Okta. Still read-only, full stop.
+> Scoped 2026-07-04 (design comparison run at max effort; decisions confirmed: A+C hybrid, include reverse trace, target 5k apps / 10k groups / 60k assignments, auto-threshold keeps the full canvas for small tenants). When M5 merges, promote this section to the top of a rewritten PLAN.md. The durable principle lives in CLAUDE.md ("Scale strategy").
+
+**Goal:** the viewer stays legible and responsive at enterprise scale (target: **5k apps / 10k groups / 60k assignments**) without giving up the local-first static file. Above a size threshold the viewer becomes **query-first**: a scale-independent landing surface (search + inventory lists + coverage) where every canvas render is a **bounded focus view**. At or below the threshold (≤ ~300 nodes), the current whole-graph M4/M5 canvas renders exactly as today.
+
+**The load-bearing design decision:** change the **definition of a view**, not the renderer. No canvas render may depend on org size — every focus view is bounded by construction (visible budget ~150 nodes; hub truncation). Rejected alternatives, recorded: semantic-zoom/clustered overview (Okta data has no natural hierarchy to cluster on; converges to needing focus views at the leaves; highest cost) and renderer swaps (canvas/WebGL solves paint, not legibility). All new logic is PURE and fixture-testable: `traceApp()` (reverse trace) in core, `buildFocusView()` / search index / adjacency indexes in viewer pure modules.
+
+**Scope rails:**
+
+- **Local-first stays.** One static envelope file; in-memory indexes built once at load. No backend, no streaming, no chunked files in M6 (escape hatches recorded in CLAUDE.md for beyond-target scale).
+- **Hub truncation is non-negotiable:** a group granting N ≫ k apps renders top-k edges + ONE aggregate pseudo-node ("…and N−k more — browse list") that opens a panel list. Same for apps with many groups. k ≈ 12, pinned at checkpoint.
+- **Policy semantics unchanged:** two layers distinct, "org default" ≠ unprotected, policies stay card attributes.
+- The synthetic-scale data is generated IN TESTS (seeded, deterministic) — never a committed multi-MB fixture, never from a real tenant.
+
+### Phase A — offline (pause at the checkpoint)
+
+1. **Pin the contracts.** (a) Envelope slimming: the embedded coverage's `items[].resource` (full ParsedResource per item) exists for CLI import-block generation, which the viewer never does; `recommend()` needs only `overall`/`perKind`, panels need `kind/key/name/bucket/reason`. Decide the slimmed shape (projection type vs optional field) + compat handling. (b) `traceApp()` signature (mirror of `trace()`: groups granting the app + rules populating those groups + its auth policy). (c) Budget + k values; auto-threshold value (~300). (d) Virtualized list: tiny dep (version-check per CLAUDE.md) vs hand-rolled.
+
+--- CHECKPOINT: review slimmed-envelope shape, traceApp contract, and budget/threshold constants before building. ---
+
+2. **Core:** pure `traceApp(graph, appNameOrId)` + reverse adjacency; CLI surface `trace --app <nameOrId>` (cheap, same renderer shape).
+3. **Viewer pure modules:** `indexes.ts` (id→node, group→apps, app→groups, name-search index — built once per load); `build-focus-view.ts` (foci + budget → bounded flow graph with aggregate pseudo-nodes; eviction by distance-from-focus, unmanaged-ness boosts retention).
+4. **Landing surface (the C half):** above-threshold files land on search + per-kind virtualized inventory tabs (filter by coverage bucket/name) + the existing CoveragePanel. Below-threshold: today's full canvas, unchanged.
+5. **Focus canvas (the A half):** search/row-click → focus view rendered through the existing GraphView (cards, badges, overlay, dagre — all reused); click neighbor = re-focus; shift-click = add neighborhood under budget; aggregate pseudo-node click = panel list.
+6. **Tests + build green — show output.**
+
+### Test oracle for Phase A
+
+- **Synthetic-scale generator** (pure, seeded): 5k apps / 10k groups / 60k assignments / heavy-tail hubs (incl. one group→800 apps, one app→400 groups).
+- **buildFocusView:** NEVER exceeds budget for any focus in the synthetic org (property-style row); hub focus yields exactly k edges + 1 aggregate node reporting N−k; unmanaged neighbors survive eviction over managed ones at equal distance.
+- **traceApp:** on the fixture tenant, `traceApp("GitHub")` → groups {Engineering, Contractors}, rule eng-rule (via Engineering), auth policy null/org-default; `traceApp("Datadog")` → {Engineering}, Strict-Auth. Mirrors the M1 trace oracle.
+- **indexes:** build over the synthetic org completes within a generous smoke bound; lookups match brute-force scans on sampled ids.
+- **Threshold:** fixture envelope (≤300 nodes) → full-canvas mode; synthetic envelope → query-first mode. Slimmed-envelope compat: M5 fat envelopes still load (compat row), slim envelopes drive panels + recommend() identically.
+- **web:build** green; whole-graph path regression-covered by existing M4/M5 tests.
+
+### Phase B — ground truth + demo
+
+- [ ] Script writes a synthetic-scale envelope to `generated/` (gitignored); load in browser: responsive search, bounded focus views, visible hub truncation, inventory tabs smooth. (No live data involved.)
+- [ ] Live regression: the real Integrator tenant (small) still lands on the full canvas exactly as M5 shipped it. (Live read — Opus per the standing note.)
+- [ ] Screenshot a focus view at scale → README.
+- [ ] Branch `/security-review`; PR.
+
+### Deferred (do NOT build in M6)
+
+- Semantic-zoom/clustered overview; adjacency-matrix density mode (recorded alternatives).
+- Chunked envelopes / SQLite-wasm (beyond-target scale escape hatches); any backend.
+- Click-ops attribution via System Log (`okta.logs.read` — separate backlog item, M7 candidate).
+- Plan-diff view; attribute drift; OEL; write operations (never).

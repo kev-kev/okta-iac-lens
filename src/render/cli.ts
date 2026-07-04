@@ -6,6 +6,7 @@
 
 import type { GraphSummary, TraceResult } from "../core/access-paths.js";
 import type { CoverageBucket, CoverageReport } from "../analysis/coverage.js";
+import { recommend } from "../analysis/recommendations.js";
 
 export type OutputFormat = "text" | "json";
 
@@ -50,7 +51,8 @@ function formatPct(coverage: number | null): string {
 }
 
 export function renderCoverage(report: CoverageReport, format: OutputFormat): string {
-  if (format === "json") return JSON.stringify(report, null, 2);
+  const recommendations = recommend(report);
+  if (format === "json") return JSON.stringify({ ...report, recommendations }, null, 2);
 
   const lines: string[] = [];
   lines.push("IaC coverage — live tenant vs Terraform state");
@@ -88,6 +90,13 @@ export function renderCoverage(report: CoverageReport, format: OutputFormat): st
   section("Unmanaged — in the tenant but not in Terraform", "unmanaged", false);
   section("Stale — in Terraform but not the tenant", "stale", false);
   section("Excluded — not Terraform-manageable", "excluded", true);
+
+  lines.push("");
+  lines.push("Recommended steps:");
+  for (const r of recommendations) {
+    lines.push(`  • ${r.title}`);
+    lines.push(`      ${r.detail}`);
+  }
 
   return lines.join("\n");
 }

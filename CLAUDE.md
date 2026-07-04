@@ -126,6 +126,16 @@ Unit tests against fixtures prove the parser and graph logic. The **real** accep
 
 Build only what the current `PLAN.md` milestone defines. Do not jump ahead to live API, coverage, an Okta Expression Language interpreter, or web viz until a milestone calls for them. If a decision isn't covered by `PLAN.md` or this file, ask rather than guess.
 
+## Scale strategy (decided 2026-07-04, M6 design)
+
+Enterprise Okta tenants (thousands of apps/groups, tens of thousands of app-group assignments — the cardinality bomb) cannot be rendered as a whole graph: it fails legibility before it fails the renderer. The durable rule:
+
+- **Fix the view definition, not the renderer.** No canvas render may depend on org size. Above a size threshold (~300 nodes) the viewer is **query-first**: scale-independent surfaces (search, per-kind inventory lists, coverage panel) are the entry, and every canvas render is a **bounded focus view** (trace-shaped neighborhood, visible budget ~150 nodes). At/below the threshold, the whole-graph canvas is fine and preserved.
+- **Hubs must truncate:** top-k edges + one aggregate pseudo-node ("…and N more — browse list"). Never render a hub's full fan-out.
+- **Local-first survives enterprise scale** with slimmed envelopes (drop per-item embedded resources the viewer never uses) and in-memory indexes built once at load. Escape hatches if ever needed beyond that: chunked index files or SQLite-wasm — still local, still no backend. A backend is not forced by any realistic read-only snapshot size.
+- **Rejected (with cause, revisitable):** semantic-zoom/clustered overviews — Okta data has no natural hierarchy to cluster on, and they converge to needing focus views at the leaves anyway. Adjacency matrix noted as the canonical dense-bipartite encoding if assignment-density analysis ever becomes a first-class task.
+- Scale claims are **tested invariants**, not hopes: a seeded synthetic-scale generator in tests (never a committed giant fixture, never real tenant data) with budget/truncation property rows.
+
 ## Naming note
 
 If this ever becomes a distributed or commercial product, reconsider the `okta-` prefix: using Okta's mark in a product name can raise trademark and brand-guideline issues. Fine for a personal repo and portfolio.

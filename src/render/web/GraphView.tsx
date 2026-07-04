@@ -4,6 +4,7 @@ import type { Edge as RFEdge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { EdgeKind } from "../../core/model.js";
 import type { CardModel } from "./derive-cards.js";
+import type { CoverageBadges } from "./coverage-badges.js";
 import { layoutGraph } from "./layout.js";
 import { edgeId } from "./highlight.js";
 import type { HighlightSet } from "./highlight.js";
@@ -16,11 +17,16 @@ const EDGE_COLOR: Partial<Record<EdgeKind, string>> = {
   grants: "#2563eb",
 };
 
+/** An unmanaged grants edge (a click-ops app assignment) is drawn in the "gap" hue. */
+const UNMANAGED_EDGE_COLOR = "#f59e0b";
+
 export interface GraphViewProps {
   cards: CardModel;
   highlight?: HighlightSet | null;
   /** The currently selected policy id (to emphasize its badge across every card it's on). */
   selectedPolicyId?: string | null;
+  /** M5 coverage overlay maps, or null when no overlay is active. */
+  badges?: CoverageBadges | null;
   showLabels?: boolean;
   onSelectGroup?: (groupId: string) => void;
   onSelectPolicy?: (policyId: string) => void;
@@ -31,6 +37,7 @@ export function GraphView({
   cards,
   highlight,
   selectedPolicyId,
+  badges,
   showLabels = true,
   onSelectGroup,
   onSelectPolicy,
@@ -59,10 +66,12 @@ export function GraphView({
             policyName: policy?.name,
             policyId: policy?.id,
             policyActive: policy != null && policy.id === selectedPolicyId,
+            bucket: badges?.bucketByNodeId.get(n.id),
+            policyBucket: policy ? badges?.bucketByPolicyId.get(policy.id) : undefined,
           },
         };
       }),
-    [flow, positions, highlight, selectedPolicyId, sessionPolicyByGroup, authPolicyByApp],
+    [flow, positions, highlight, selectedPolicyId, badges, sessionPolicyByGroup, authPolicyByApp],
   );
 
   const edges: RFEdge[] = useMemo(
@@ -71,17 +80,20 @@ export function GraphView({
         const id = edgeId(e);
         const active = highlight ? highlight.edgeIds.has(id) : undefined;
         const dim = active === false;
-        const stroke = EDGE_COLOR[e.kind] ?? "#94a3b8";
+        // An unmanaged grants edge (a click-ops assignment not in Terraform) is recolored.
+        const unmanaged = badges?.bucketByEdgeId.get(id) === "unmanaged";
+        const stroke = unmanaged ? UNMANAGED_EDGE_COLOR : (EDGE_COLOR[e.kind] ?? "#94a3b8");
+        const label = unmanaged ? "grants · not in Terraform" : showLabels ? e.kind : undefined;
         return {
           id,
           source: e.from,
           target: e.to,
-          label: showLabels ? e.kind : undefined,
+          label,
           animated: active === true,
           style: {
             stroke,
-            strokeWidth: active === true ? 2.5 : 1.5,
-            strokeDasharray: e.kind === "populates" ? "6 4" : undefined,
+            strokeWidth: active === true || unmanaged ? 2.5 : 1.5,
+            strokeDasharray: unmanaged ? "6 3" : e.kind === "populates" ? "6 4" : undefined,
             opacity: dim ? 0.12 : 1,
           },
           labelStyle: { fill: stroke, fontSize: 11, opacity: dim ? 0.15 : 1 },
@@ -90,7 +102,7 @@ export function GraphView({
           labelBgBorderRadius: 6,
         };
       }),
-    [flow, highlight, showLabels],
+    [flow, highlight, showLabels, badges],
   );
 
   return (
