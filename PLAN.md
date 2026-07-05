@@ -57,3 +57,15 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 - Click-ops attribution via System Log (`okta.logs.read` — separate backlog item, M7 candidate).
 - Plan-diff view; attribute-level drift; OEL evaluation.
 - Any WRITE operation against Okta. Read-only, full stop.
+
+## Backlog — "The opinionated layer: what an enterprise IT engineer actually needs" (recorded 2026-07-05, M7 scoping input)
+
+From the mid-M6 product conversation. The honest principle: at enterprise scale, engineers don't browse graphs — they arrive with a question (a ticket, an audit, a change, a posture review). A node-link canvas earns its keep for exactly two jobs — **path explanation** ("why does X reach Y", the trace/focus views) and **blast radius** ("what depends on this thing I'm changing") — and everything else that matters is **ranked lists, tables, quadrants, and diffs that link INTO the canvas**. M6's query-first substrate is the right skeleton; what it lacks is opinionation (the Explorer sorts alphabetically; an engineer needs risk/reach order). Candidate features, ranked by value:
+
+1. **User-level trace (the headline; requires REOPENING the users-out-of-scope decision).** "Why does/doesn't user U reach app A" is the single most common enterprise question. Not a cardinality problem — you look up ONE user at a time: their group memberships (read-only `okta.users.read` + per-user groups API), which memberships came via which rule vs. direct assignment, then the existing group→app→policy machinery. Scales fine; needs a new read-only scope + model surface (User as a trace INPUT, not bulk graph nodes).
+2. **Risk-ranked landing page** (cheap — all data in hand): cross **reach** (groups-granting-an-app / apps-granted-by-a-group, computable from edges today) × **gate strength** (org-default vs. custom auth policy) × **IaC status** (unmanaged). "Widest reach, weakest gate, not in Terraform" sorts first; scatter/quadrant view + ranked inventory replacing alphabetical sort.
+3. **Blast-radius framing of the focus view** (near-free): same computation, ticket-ready words — "42 apps and 3 rules depend on this group."
+4. **Policy outlier views** — apps that look like their cohort but sit behind a weaker policy (table/heatmap; the parked adjacency-matrix fits here).
+5. **What-if**: plan-diff (deferred, still the next overlay) and persona/birthright simulation ("what does a new dept=X hire get?") — the real ask behind OEL evaluation, still deferred as brittle.
+
+Rails if picked up: read-only always; users are per-lookup trace inputs, never bulk-fetched or drawn in bulk; ranking logic pure in `src/analysis/`, tested against fixtures like everything else.
