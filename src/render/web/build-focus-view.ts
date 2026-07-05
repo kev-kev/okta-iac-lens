@@ -46,6 +46,8 @@ export interface FocusView {
   aggregates: AggregateNode[];
   /** True if anything was omitted (a hub cap or the budget was hit). */
   truncated: boolean;
+  /** BFS depth per visible node (focus = 0). Lets the UI emphasize near context, dim the frontier. */
+  depthById: Map<string, number>;
 }
 
 export interface FocusOptions {
@@ -122,7 +124,7 @@ export function buildFocusView(
   }
   aggregates.sort((a, b) => a.hostId.localeCompare(b.hostId));
 
-  return { graph: { nodes, edges }, aggregates, truncated: aggregates.length > 0 };
+  return { graph: { nodes, edges }, aggregates, truncated: aggregates.length > 0, depthById: depthOf };
 }
 
 /** The neighbors of `hostId` NOT shown in the given focus view — what its "+N more" stands for.

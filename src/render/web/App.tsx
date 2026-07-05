@@ -6,7 +6,8 @@ import { EnvelopeError, parseEnvelope } from "./parse-envelope.js";
 import type { ParsedEnvelope } from "./parse-envelope.js";
 import { deriveCards } from "./derive-cards.js";
 import { coverageBadges } from "./coverage-badges.js";
-import { highlightForPolicy, highlightForTrace } from "./highlight.js";
+import { edgeId, highlightForPolicy, highlightForTrace } from "./highlight.js";
+import type { HighlightSet } from "./highlight.js";
 import { buildIndexes } from "./indexes.js";
 import { AUTO_THRESHOLD, buildFocusView, hiddenNeighbors } from "./build-focus-view.js";
 import { HiddenNeighborsPanel } from "./HiddenNeighborsPanel.js";
@@ -119,6 +120,16 @@ export function App() {
   }, [graph, indexes, isLarge, focusId, badges]);
   const focusCards = useMemo(() => (focus ? deriveCards(focus.graph) : null), [focus]);
 
+  /** Emphasize the focus + its direct neighbors; dim the depth-2 frontier (context, not story). */
+  const focusHighlight = useMemo<HighlightSet | null>(() => {
+    if (!focus) return null;
+    const near = new Set<string>();
+    for (const [id, depth] of focus.depthById) if (depth <= 1) near.add(id);
+    const edgeIds = new Set<string>();
+    for (const e of focus.graph.edges) if (near.has(e.from) && near.has(e.to)) edgeIds.add(edgeId(e));
+    return { nodeIds: near, edgeIds };
+  }, [focus]);
+
   /** What the clicked "+N more" stands for, as nodes (for the panel list). */
   const expandedNeighbors = useMemo(() => {
     if (!focus || !indexes || !expandedHostId) return null;
@@ -199,6 +210,7 @@ export function App() {
             <div className="workspace">
               <GraphView
                 cards={focusCards}
+                highlight={focusHighlight}
                 badges={badges}
                 aggregates={focus.aggregates}
                 focusNodeId={focusId}
