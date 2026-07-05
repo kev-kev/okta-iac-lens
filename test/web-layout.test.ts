@@ -52,4 +52,14 @@ describe("layoutGraph (dagre)", () => {
     const again = layoutGraph(flow);
     for (const n of flow.nodes) expect(again.get(n.id)).toEqual(pos.get(n.id));
   });
+
+  it("lays out focus-view aggregates as real dagre nodes after their host (no manual offsets)", () => {
+    const withAgg = layoutGraph(flow, [{ id: "agg:g-eng", hostId: "g-eng", hiddenCount: 5 }]);
+    const agg = withAgg.get("agg:g-eng");
+    const host = withAgg.get("g-eng");
+    expect(agg).toBeDefined();
+    expect(host).toBeDefined();
+    expect(agg!.x).toBeGreaterThan(host!.x); // LR: ranked after its host
+    expect(Number.isFinite(agg!.y)).toBe(true);
+  });
 });

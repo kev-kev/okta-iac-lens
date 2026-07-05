@@ -5,11 +5,14 @@
  * ranks, orders nodes to minimize crossings, and spaces them so edges route through gaps
  * rather than through cards. It operates on the FLOW graph only (rule -> group -> app); policies
  * are card attributes now (see derive-cards.ts), so there are no policy nodes/edges to route.
+ * Focus-view "+N more" aggregates are laid out AS dagre nodes (leaves hanging off their host),
+ * so they get real, non-overlapping positions instead of a hand-tuned offset.
  * dagre is deterministic for a given input, so the layout is stable across runs.
  */
 
 import dagre from "@dagrejs/dagre";
 import type { OktaGraph } from "../../core/model.js";
+import type { AggregateNode } from "./build-focus-view.js";
 
 export interface NodePosition {
   x: number;
@@ -19,32 +22,44 @@ export interface NodePosition {
 /** Card size dagre reserves per node (must roughly match the rendered card box). */
 export const NODE_WIDTH = 220;
 export const NODE_HEIGHT = 84;
+/** "+N more" aggregate pill size. */
+export const AGG_WIDTH = 110;
+export const AGG_HEIGHT = 34;
 
 /**
- * Lay out the flow graph left-to-right. Returns top-left positions keyed by node id (dagre
- * reports node centers; React Flow wants top-left, so we shift by half the box).
+ * Lay out the flow graph (plus any focus-view aggregates) left-to-right. Returns top-left
+ * positions keyed by node/aggregate id (dagre reports centers; React Flow wants top-left).
  */
-export function layoutGraph(flow: OktaGraph): Map<string, NodePosition> {
+export function layoutGraph(
+  flow: OktaGraph,
+  aggregates: AggregateNode[] = [],
+): Map<string, NodePosition> {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "LR", nodesep: 44, ranksep: 110, marginx: 24, marginy: 24 });
   g.setDefaultEdgeLabel(() => ({}));
 
+  const size = new Map<string, { width: number; height: number }>();
   for (const node of flow.nodes) {
+    size.set(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
     g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  }
+  for (const agg of aggregates) {
+    size.set(agg.id, { width: AGG_WIDTH, height: AGG_HEIGHT });
+    g.setNode(agg.id, { width: AGG_WIDTH, height: AGG_HEIGHT });
   }
   for (const edge of flow.edges) {
     g.setEdge(edge.from, edge.to);
+  }
+  for (const agg of aggregates) {
+    g.setEdge(agg.hostId, agg.id); // a leaf: dagre ranks it after its host, no crossings added
   }
 
   dagre.layout(g);
 
   const positions = new Map<string, NodePosition>();
-  for (const node of flow.nodes) {
-    const laid = g.node(node.id);
-    positions.set(node.id, {
-      x: laid.x - NODE_WIDTH / 2,
-      y: laid.y - NODE_HEIGHT / 2,
-    });
+  for (const [id, dim] of size) {
+    const laid = g.node(id);
+    positions.set(id, { x: laid.x - dim.width / 2, y: laid.y - dim.height / 2 });
   }
   return positions;
 }

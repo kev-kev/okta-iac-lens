@@ -20,6 +20,7 @@
     "PolicyPanel.tsx",
     "CoveragePanel.tsx",
     "Explorer.tsx",
-    "VirtualList.tsx"
+    "VirtualList.tsx",
+    "HiddenNeighborsPanel.tsx"
   ]
 }

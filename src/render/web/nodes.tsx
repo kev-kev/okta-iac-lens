@@ -24,6 +24,8 @@ export interface OktaNodeData extends Record<string, unknown> {
   /** M5 coverage overlay: this card's bucket, and its policy badge's bucket (undefined = no overlay). */
   bucket?: CoverageBucket;
   policyBucket?: CoverageBucket;
+  /** M6 focus mode: this card is the current focus (gets the FOCUS ring). */
+  isFocus?: boolean;
 }
 
 /** Short tag shown on a card/badge when the coverage overlay is on. Managed is left implicit. */
@@ -92,9 +94,13 @@ function PolicyBadge({
 export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
   const dimmed = data.active === false;
   const bucketClass = data.bucket ? ` bucket-${data.bucket}` : "";
+  const focusClass = data.isFocus ? " is-focus" : "";
   const tag = data.bucket ? BUCKET_TAG[data.bucket] : undefined;
   return (
-    <div className={`okta-node kind-${data.kind}${dimmed ? " is-dimmed" : ""}${bucketClass}`}>
+    <div
+      className={`okta-node kind-${data.kind}${dimmed ? " is-dimmed" : ""}${bucketClass}${focusClass}`}
+    >
+      {data.isFocus && <div className="focus-tag">FOCUS</div>}
       {/* Handles only anchor edges (nodesConnectable off); hidden via CSS. dagre lays out
           left->right, so incoming edges enter left, outgoing leave right. */}
       <Handle type="target" position={Position.Left} />

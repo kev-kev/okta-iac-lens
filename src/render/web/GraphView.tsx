@@ -6,7 +6,7 @@ import type { EdgeKind } from "../../core/model.js";
 import type { CardModel } from "./derive-cards.js";
 import type { CoverageBadges } from "./coverage-badges.js";
 import type { AggregateNode } from "./build-focus-view.js";
-import { layoutGraph, NODE_WIDTH } from "./layout.js";
+import { layoutGraph } from "./layout.js";
 import { edgeId } from "./highlight.js";
 import type { HighlightSet } from "./highlight.js";
 import { Legend, nodeTypes, ViewerContext } from "./nodes.js";
@@ -27,8 +27,12 @@ export interface GraphViewProps {
   selectedPolicyId?: string | null;
   /** M5 coverage overlay maps, or null when no overlay is active. */
   badges?: CoverageBadges | null;
-  /** M6 focus-view aggregates ("+N more" for truncated hubs), rendered beside their host. */
+  /** M6 focus-view aggregates ("+N more" for truncated hubs), laid out by dagre beside hosts. */
   aggregates?: AggregateNode[];
+  /** M6 focus mode: the focused node id — its card gets the FOCUS ring. */
+  focusNodeId?: string | null;
+  /** Remounts the canvas (re-running fitView) when this changes — pass the focus id. */
+  viewKey?: string;
   showLabels?: boolean;
   onSelectGroup?: (groupId: string) => void;
   onSelectPolicy?: (policyId: string) => void;
@@ -45,6 +49,8 @@ export function GraphView({
   selectedPolicyId,
   badges,
   aggregates,
+  focusNodeId,
+  viewKey,
   showLabels = true,
   onSelectGroup,
   onSelectPolicy,
@@ -53,7 +59,7 @@ export function GraphView({
   onClear,
 }: GraphViewProps) {
   const { flow, sessionPolicyByGroup, authPolicyByApp } = cards;
-  const positions = useMemo(() => layoutGraph(flow), [flow]);
+  const positions = useMemo(() => layoutGraph(flow, aggregates ?? []), [flow, aggregates]);
 
   const nodes: RFNode[] = useMemo(() => {
     const real: RFNode[] = flow.nodes.map((n) => {
@@ -76,18 +82,19 @@ export function GraphView({
             policyActive: policy != null && policy.id === selectedPolicyId,
             bucket: badges?.bucketByNodeId.get(n.id),
             policyBucket: policy ? badges?.bucketByPolicyId.get(policy.id) : undefined,
+            isFocus: n.id === focusNodeId,
           },
         };
       });
-    // Aggregate pseudo-nodes ("+N more") sit just right of their host.
+    // Aggregate pseudo-nodes ("+N more") — positioned by dagre like everything else.
     const aggs: RFNode[] = (aggregates ?? []).flatMap((agg) => {
-      const host = positions.get(agg.hostId);
-      if (!host) return [];
+      const pos = positions.get(agg.id);
+      if (!pos) return [];
       return [
         {
           id: agg.id,
           type: "aggregate" as const,
-          position: { x: host.x + NODE_WIDTH + 60, y: host.y },
+          position: pos,
           data: { hiddenCount: agg.hiddenCount, hostId: agg.hostId },
         },
       ];
@@ -100,6 +107,7 @@ export function GraphView({
     selectedPolicyId,
     badges,
     aggregates,
+    focusNodeId,
     sessionPolicyByGroup,
     authPolicyByApp,
   ]);
@@ -150,10 +158,12 @@ export function GraphView({
     <div className="graph-canvas">
       <ViewerContext.Provider value={{ onSelectPolicy: (id) => onSelectPolicy?.(id) }}>
         <ReactFlow
+          key={viewKey}
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
           fitView
+          fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
           panOnScroll
           nodesConnectable={false}
           onNodeClick={(_event, node) => {

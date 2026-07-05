@@ -1,14 +1,16 @@
 /**
- * web/build-focus-view: turn one or more focus nodes into a BOUNDED subgraph the canvas can
- * render legibly, no matter how large the org is. PURE, DOM-free.
+ * web/build-focus-view: turn one or more focus nodes into a BOUNDED, TRACE-SHAPED subgraph the
+ * canvas can render legibly, no matter how large the org is. PURE, DOM-free.
  *
  * This is the mechanism behind "no canvas render depends on org size" (CLAUDE.md scale strategy):
- *  - multi-source BFS outward from the foci over the flow adjacency;
- *  - a per-node HUB CAP (`hubK`): an expanded node admits at most k individual neighbors, so an
- *    "All Employees" group granting 800 apps never explodes the view;
- *  - a global visible-node BUDGET;
- *  - each visible node whose neighbors were truncated gets ONE aggregate ("N more") summary,
- *    so the fan-out is visible as a single browsable node instead of silently dropped.
+ *  - DEPTH-LIMITED expansion from the foci over the flow adjacency: the focus admits up to
+ *    `hubK` direct neighbors; each depth-1 node admits up to `neighborK`; depth-2 nodes are
+ *    frontier (admit nothing). The view answers "what does THIS node reach" — it must never
+ *    flood the budget with nodes three hops away through a hub (the original design flaw:
+ *    focusing a group pulled in ~140 sibling groups of a hub app, pure noise).
+ *  - a global visible-node BUDGET as the hard cap;
+ *  - "N more" AGGREGATES only on the focus and its direct neighbors (where they're actionable),
+ *    each backed by a browsable list — truncation is visible, never silent.
  * At equal reach, UNMANAGED neighbors are admitted first (the coverage gap is what you're hunting).
  *
  * Returns a real `OktaGraph` (consumable by the existing layout/deriveCards/GraphView pipeline)
@@ -21,10 +23,12 @@ import type { GraphIndexes } from "./indexes.js";
 
 /** Above this many nodes the viewer switches from full-canvas to query-first (CLAUDE.md scale). */
 export const AUTO_THRESHOLD = 300;
-/** Default max real visible nodes in a focus view. */
+/** Default max real visible nodes in a focus view (hard cap). */
 export const FOCUS_BUDGET = 150;
-/** Default max individual neighbors an expanded node admits before the rest aggregate. */
+/** Max direct neighbors the FOCUS admits before the rest aggregate. */
 export const HUB_K = 12;
+/** Max neighbors a depth-1 node admits (context, not flooding). Depth-2 admits none. */
+export const NEIGHBOR_K = 4;
 
 export interface AggregateNode {
   /** Synthetic id, `agg:<hostId>`. */
@@ -45,11 +49,13 @@ export interface FocusView {
 }
 
 export interface FocusOptions {
-  /** Max real visible nodes. Default 150. */
+  /** Max real visible nodes (hard cap). Default 150. */
   budget?: number;
-  /** Max individual neighbors an expanded node admits before the rest aggregate. Default 12. */
+  /** Max direct neighbors the focus admits before the rest aggregate. Default 12. */
   hubK?: number;
-  /** Coverage buckets — `unmanaged` nodes are preferentially retained at equal reach. */
+  /** Max neighbors a depth-1 node admits. Depth-2 nodes admit none. Default 4. */
+  neighborK?: number;
+  /** Coverage buckets — `unmanaged` nodes are preferentially admitted at equal reach. */
   bucketByNodeId?: Map<string, CoverageBucket>;
 }
 
@@ -61,53 +67,67 @@ export function buildFocusView(
 ): FocusView {
   const budget = options.budget ?? FOCUS_BUDGET;
   const hubK = options.hubK ?? HUB_K;
+  const neighborK = options.neighborK ?? NEIGHBOR_K;
   const bucket = options.bucketByNodeId;
   // Lower sort key = admitted first: unmanaged before others, then id for determinism.
   const rank = (id: string): number => (bucket?.get(id) === "unmanaged" ? 0 : 1);
+  /** How many neighbors a node at this depth may admit. Depth ≥ 2 is frontier. */
+  const capAtDepth = (depth: number): number => (depth === 0 ? hubK : depth === 1 ? neighborK : 0);
 
-  const visible = new Set<string>();
+  const depthOf = new Map<string, number>(); // visible set, with BFS depth
   const queue: string[] = [];
   for (const id of foci) {
-    if (indexes.nodeById.has(id) && !visible.has(id) && visible.size < budget) {
-      visible.add(id);
+    if (indexes.nodeById.has(id) && !depthOf.has(id) && depthOf.size < budget) {
+      depthOf.set(id, 0);
       queue.push(id);
     }
   }
 
   for (let head = 0; head < queue.length; head++) {
-    if (visible.size >= budget) break;
+    if (depthOf.size >= budget) break;
     const id = queue[head];
+    const cap = capAtDepth(depthOf.get(id) ?? 0);
+    if (cap === 0) continue; // frontier: its unexpanded fan-out is NOT this view's story
     const neighborIds = (indexes.neighbors.get(id) ?? [])
       .slice()
       .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
     let admitted = 0;
     for (const nb of neighborIds) {
-      if (visible.has(nb)) continue; // already in via another path — free
-      if (admitted >= hubK || visible.size >= budget) break; // rest of this node's fan-out aggregates
-      visible.add(nb);
+      if (depthOf.has(nb)) continue; // already in via another path — free
+      if (admitted >= cap || depthOf.size >= budget) break; // remainder aggregates
+      depthOf.set(nb, (depthOf.get(id) ?? 0) + 1);
       queue.push(nb);
       admitted++;
     }
   }
 
-  const nodes = graph.nodes.filter((n) => visible.has(n.id));
+  const nodes = graph.nodes.filter((n) => depthOf.has(n.id));
   const edges = graph.edges.filter(
     (e) =>
       (e.kind === "populates" || e.kind === "grants") &&
-      visible.has(e.from) &&
-      visible.has(e.to),
+      depthOf.has(e.from) &&
+      depthOf.has(e.to),
   );
 
-  // A visible node with any neighbor NOT in the view gets one aggregate summarizing the remainder.
+  // Aggregates ONLY where they're actionable: the focus and its direct neighbors. A deeper
+  // frontier node's unexpanded fan-out is expected, not signal — pills there are pure noise.
   const aggregates: AggregateNode[] = [];
-  for (const id of visible) {
+  for (const [id, depth] of depthOf) {
+    if (depth > 1) continue;
     let hidden = 0;
     for (const nb of indexes.neighbors.get(id) ?? []) {
-      if (!visible.has(nb)) hidden++;
+      if (!depthOf.has(nb)) hidden++;
     }
     if (hidden > 0) aggregates.push({ id: `agg:${id}`, hostId: id, hiddenCount: hidden });
   }
   aggregates.sort((a, b) => a.hostId.localeCompare(b.hostId));
 
   return { graph: { nodes, edges }, aggregates, truncated: aggregates.length > 0 };
+}
+
+/** The neighbors of `hostId` NOT shown in the given focus view — what its "+N more" stands for.
+ * PURE; used by the hidden-neighbors panel (aggregate click → browsable list, per the plan). */
+export function hiddenNeighbors(view: FocusView, indexes: GraphIndexes, hostId: string): string[] {
+  const visible = new Set(view.graph.nodes.map((n) => n.id));
+  return (indexes.neighbors.get(hostId) ?? []).filter((id) => !visible.has(id)).sort();
 }

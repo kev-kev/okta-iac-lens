@@ -8,7 +8,8 @@ import { deriveCards } from "./derive-cards.js";
 import { coverageBadges } from "./coverage-badges.js";
 import { highlightForPolicy, highlightForTrace } from "./highlight.js";
 import { buildIndexes } from "./indexes.js";
-import { AUTO_THRESHOLD, buildFocusView } from "./build-focus-view.js";
+import { AUTO_THRESHOLD, buildFocusView, hiddenNeighbors } from "./build-focus-view.js";
+import { HiddenNeighborsPanel } from "./HiddenNeighborsPanel.js";
 import { GraphView } from "./GraphView.js";
 import { TracePanel } from "./TracePanel.js";
 import { PolicyPanel } from "./PolicyPanel.js";
@@ -21,9 +22,16 @@ export function App() {
   const [envelope, setEnvelope] = useState<ParsedEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusId, setFocusIdRaw] = useState<string | null>(null);
+  const [expandedHostId, setExpandedHostId] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
+
+  /** Changing focus always closes the hidden-neighbors panel. */
+  const setFocusId = useCallback((id: string | null) => {
+    setFocusIdRaw(id);
+    setExpandedHostId(null);
+  }, []);
 
   const load = useCallback(async (file: File) => {
     try {
@@ -111,6 +119,14 @@ export function App() {
   }, [graph, indexes, isLarge, focusId, badges]);
   const focusCards = useMemo(() => (focus ? deriveCards(focus.graph) : null), [focus]);
 
+  /** What the clicked "+N more" stands for, as nodes (for the panel list). */
+  const expandedNeighbors = useMemo(() => {
+    if (!focus || !indexes || !expandedHostId) return null;
+    return hiddenNeighbors(focus, indexes, expandedHostId)
+      .map((id) => indexes.nodeById.get(id))
+      .filter((n): n is NonNullable<typeof n> => n != null);
+  }, [focus, indexes, expandedHostId]);
+
   return (
     <div className="app" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <header className="app-header">
@@ -185,11 +201,21 @@ export function App() {
                 cards={focusCards}
                 badges={badges}
                 aggregates={focus.aggregates}
+                focusNodeId={focusId}
+                viewKey={focusId ?? undefined}
                 showLabels={showLabels}
                 onFocusNode={(id) => setFocusId(id)}
-                onExpandAggregate={(hostId) => setFocusId(hostId)}
-                onClear={() => setFocusId(null)}
+                onExpandAggregate={(hostId) => setExpandedHostId(hostId)}
+                onClear={() => setExpandedHostId(null)}
               />
+              {expandedHostId && expandedNeighbors && (
+                <HiddenNeighborsPanel
+                  hostName={nameById.get(expandedHostId) ?? expandedHostId}
+                  neighbors={expandedNeighbors}
+                  onFocus={setFocusId}
+                  onClear={() => setExpandedHostId(null)}
+                />
+              )}
             </div>
           </div>
         ) : (
