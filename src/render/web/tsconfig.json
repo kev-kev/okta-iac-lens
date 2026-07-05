@@ -18,6 +18,8 @@
     "nodes.tsx",
     "TracePanel.tsx",
     "PolicyPanel.tsx",
-    "CoveragePanel.tsx"
+    "CoveragePanel.tsx",
+    "Explorer.tsx",
+    "VirtualList.tsx"
   ]
 }

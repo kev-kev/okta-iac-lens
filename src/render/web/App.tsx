@@ -7,10 +7,13 @@ import type { ParsedEnvelope } from "./parse-envelope.js";
 import { deriveCards } from "./derive-cards.js";
 import { coverageBadges } from "./coverage-badges.js";
 import { highlightForPolicy, highlightForTrace } from "./highlight.js";
+import { buildIndexes } from "./indexes.js";
+import { AUTO_THRESHOLD, buildFocusView } from "./build-focus-view.js";
 import { GraphView } from "./GraphView.js";
 import { TracePanel } from "./TracePanel.js";
 import { PolicyPanel } from "./PolicyPanel.js";
 import { CoveragePanel } from "./CoveragePanel.js";
+import { Explorer } from "./Explorer.js";
 
 type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
 
@@ -18,6 +21,7 @@ export function App() {
   const [envelope, setEnvelope] = useState<ParsedEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
 
@@ -26,10 +30,12 @@ export function App() {
       const parsed = parseEnvelope(JSON.parse(await file.text()));
       setEnvelope(parsed);
       setSelection(null);
+      setFocusId(null);
       setError(null);
     } catch (e) {
       setEnvelope(null);
       setSelection(null);
+      setFocusId(null);
       if (e instanceof EnvelopeError) setError(e.message);
       else if (e instanceof SyntaxError) setError("That file isn't valid JSON.");
       else setError(e instanceof Error ? e.message : String(e));
@@ -95,6 +101,16 @@ export function App() {
     [coverage, showOverlay],
   );
 
+  // Scale mode: above the threshold, land query-first and render bounded focus views.
+  const isLarge = (graph?.nodes.length ?? 0) > AUTO_THRESHOLD;
+  const indexes = useMemo(() => (graph ? buildIndexes(graph) : null), [graph]);
+
+  const focus = useMemo(() => {
+    if (!graph || !indexes || !isLarge || !focusId) return null;
+    return buildFocusView(graph, indexes, [focusId], { bucketByNodeId: badges?.bucketByNodeId });
+  }, [graph, indexes, isLarge, focusId, badges]);
+  const focusCards = useMemo(() => (focus ? deriveCards(focus.graph) : null), [focus]);
+
   return (
     <div className="app" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <header className="app-header">
@@ -113,8 +129,10 @@ export function App() {
         {envelope && (
           <>
             <span className="meta">
-              source: {envelope.source} · {envelope.graph.nodes.length} nodes · click a group to
-              trace, or a policy badge to see its reach
+              source: {envelope.source} · {envelope.graph.nodes.length} nodes
+              {isLarge
+                ? " · large tenant: search or pick a resource to focus"
+                : " · click a group to trace, or a policy badge to see its reach"}
             </span>
             {coverage && (
               <label className="toggle">
@@ -141,7 +159,45 @@ export function App() {
       {error && <div className="error-banner">{error}</div>}
       {envelope?.notice && <div className="notice-banner">{envelope.notice}</div>}
 
-      {cards ? (
+      {!graph ? (
+        <div className="dropzone">
+          <p>
+            Drop a graph JSON here, or use <strong>Open graph…</strong>
+          </p>
+          <p className="hint">
+            Generate one with <code>npm run dev -- export --state &lt;tfstate&gt;</code>
+          </p>
+        </div>
+      ) : isLarge ? (
+        focus && focusCards ? (
+          <div className="focus-view">
+            <div className="focus-bar">
+              <button type="button" className="clear-btn" onClick={() => setFocusId(null)}>
+                ← All resources
+              </button>
+              <span className="meta">
+                Focused on <strong>{nameById.get(focusId ?? "") ?? focusId}</strong>
+                {focus.truncated ? " · view truncated to stay legible" : ""}
+              </span>
+            </div>
+            <div className="workspace">
+              <GraphView
+                cards={focusCards}
+                badges={badges}
+                aggregates={focus.aggregates}
+                showLabels={showLabels}
+                onFocusNode={(id) => setFocusId(id)}
+                onExpandAggregate={(hostId) => setFocusId(hostId)}
+                onClear={() => setFocusId(null)}
+              />
+            </div>
+          </div>
+        ) : (
+          indexes && (
+            <Explorer graph={graph} indexes={indexes} coverage={coverage} onFocus={setFocusId} />
+          )
+        )
+      ) : cards ? (
         <div className="workspace">
           <GraphView
             cards={cards}
@@ -166,16 +222,7 @@ export function App() {
           )}
           {selection === null && coverage && showOverlay && <CoveragePanel report={coverage} />}
         </div>
-      ) : (
-        <div className="dropzone">
-          <p>
-            Drop a graph JSON here, or use <strong>Open graph…</strong>
-          </p>
-          <p className="hint">
-            Generate one with <code>npm run dev -- export --state &lt;tfstate&gt;</code>
-          </p>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

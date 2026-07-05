@@ -19,6 +19,13 @@ import type { OktaGraph } from "../../core/model.js";
 import type { CoverageBucket } from "../../analysis/coverage.js";
 import type { GraphIndexes } from "./indexes.js";
 
+/** Above this many nodes the viewer switches from full-canvas to query-first (CLAUDE.md scale). */
+export const AUTO_THRESHOLD = 300;
+/** Default max real visible nodes in a focus view. */
+export const FOCUS_BUDGET = 150;
+/** Default max individual neighbors an expanded node admits before the rest aggregate. */
+export const HUB_K = 12;
+
 export interface AggregateNode {
   /** Synthetic id, `agg:<hostId>`. */
   id: string;
@@ -52,8 +59,8 @@ export function buildFocusView(
   foci: string[],
   options: FocusOptions = {},
 ): FocusView {
-  const budget = options.budget ?? 150;
-  const hubK = options.hubK ?? 12;
+  const budget = options.budget ?? FOCUS_BUDGET;
+  const hubK = options.hubK ?? HUB_K;
   const bucket = options.bucketByNodeId;
   // Lower sort key = admitted first: unmanaged before others, then id for determinism.
   const rank = (id: string): number => (bucket?.get(id) === "unmanaged" ? 0 : 1);

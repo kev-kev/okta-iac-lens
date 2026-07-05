@@ -1,15 +1,15 @@
 import { useMemo } from "react";
 import { ReactFlow, Background, Controls, Panel } from "@xyflow/react";
-import type { Edge as RFEdge } from "@xyflow/react";
+import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { EdgeKind } from "../../core/model.js";
 import type { CardModel } from "./derive-cards.js";
 import type { CoverageBadges } from "./coverage-badges.js";
-import { layoutGraph } from "./layout.js";
+import type { AggregateNode } from "./build-focus-view.js";
+import { layoutGraph, NODE_WIDTH } from "./layout.js";
 import { edgeId } from "./highlight.js";
 import type { HighlightSet } from "./highlight.js";
 import { Legend, nodeTypes, ViewerContext } from "./nodes.js";
-import type { OktaFlowNode } from "./nodes.js";
 
 /** Only spine edges remain in the flow graph now (policies are card attributes). */
 const EDGE_COLOR: Partial<Record<EdgeKind, string>> = {
@@ -27,9 +27,15 @@ export interface GraphViewProps {
   selectedPolicyId?: string | null;
   /** M5 coverage overlay maps, or null when no overlay is active. */
   badges?: CoverageBadges | null;
+  /** M6 focus-view aggregates ("+N more" for truncated hubs), rendered beside their host. */
+  aggregates?: AggregateNode[];
   showLabels?: boolean;
   onSelectGroup?: (groupId: string) => void;
   onSelectPolicy?: (policyId: string) => void;
+  /** M6 focus mode: clicking any real node re-focuses on it (overrides onSelectGroup when set). */
+  onFocusNode?: (nodeId: string) => void;
+  /** M6 focus mode: clicking an aggregate opens its host's truncated-neighbor list. */
+  onExpandAggregate?: (hostId: string) => void;
   onClear?: () => void;
 }
 
@@ -38,17 +44,19 @@ export function GraphView({
   highlight,
   selectedPolicyId,
   badges,
+  aggregates,
   showLabels = true,
   onSelectGroup,
   onSelectPolicy,
+  onFocusNode,
+  onExpandAggregate,
   onClear,
 }: GraphViewProps) {
   const { flow, sessionPolicyByGroup, authPolicyByApp } = cards;
   const positions = useMemo(() => layoutGraph(flow), [flow]);
 
-  const nodes: OktaFlowNode[] = useMemo(
-    () =>
-      flow.nodes.map((n) => {
+  const nodes: RFNode[] = useMemo(() => {
+    const real: RFNode[] = flow.nodes.map((n) => {
         const policy =
           n.kind === "Group"
             ? sessionPolicyByGroup.get(n.id)
@@ -70,13 +78,34 @@ export function GraphView({
             policyBucket: policy ? badges?.bucketByPolicyId.get(policy.id) : undefined,
           },
         };
-      }),
-    [flow, positions, highlight, selectedPolicyId, badges, sessionPolicyByGroup, authPolicyByApp],
-  );
+      });
+    // Aggregate pseudo-nodes ("+N more") sit just right of their host.
+    const aggs: RFNode[] = (aggregates ?? []).flatMap((agg) => {
+      const host = positions.get(agg.hostId);
+      if (!host) return [];
+      return [
+        {
+          id: agg.id,
+          type: "aggregate" as const,
+          position: { x: host.x + NODE_WIDTH + 60, y: host.y },
+          data: { hiddenCount: agg.hiddenCount, hostId: agg.hostId },
+        },
+      ];
+    });
+    return [...real, ...aggs];
+  }, [
+    flow,
+    positions,
+    highlight,
+    selectedPolicyId,
+    badges,
+    aggregates,
+    sessionPolicyByGroup,
+    authPolicyByApp,
+  ]);
 
-  const edges: RFEdge[] = useMemo(
-    () =>
-      flow.edges.map((e) => {
+  const edges: RFEdge[] = useMemo(() => {
+    const real: RFEdge[] = flow.edges.map((e) => {
         const id = edgeId(e);
         const active = highlight ? highlight.edgeIds.has(id) : undefined;
         const dim = active === false;
@@ -101,9 +130,21 @@ export function GraphView({
           labelBgPadding: [6, 3] as [number, number],
           labelBgBorderRadius: 6,
         };
-      }),
-    [flow, highlight, showLabels, badges],
-  );
+      });
+    const aggEdges: RFEdge[] = (aggregates ?? []).flatMap((agg) =>
+      positions.get(agg.hostId)
+        ? [
+            {
+              id: `e:${agg.id}`,
+              source: agg.hostId,
+              target: agg.id,
+              style: { stroke: "#64748b", strokeDasharray: "2 3" },
+            },
+          ]
+        : [],
+    );
+    return [...real, ...aggEdges];
+  }, [flow, highlight, showLabels, badges, aggregates, positions]);
 
   return (
     <div className="graph-canvas">
@@ -116,7 +157,13 @@ export function GraphView({
           panOnScroll
           nodesConnectable={false}
           onNodeClick={(_event, node) => {
-            if (node.data.kind === "Group") onSelectGroup?.(node.id);
+            if (node.type === "aggregate") {
+              onExpandAggregate?.(node.data.hostId as string);
+            } else if (onFocusNode) {
+              onFocusNode(node.id); // focus mode: any node re-focuses
+            } else if (node.data.kind === "Group") {
+              onSelectGroup?.(node.id); // full-canvas mode: groups trace
+            }
           }}
           onPaneClick={() => onClear?.()}
         >

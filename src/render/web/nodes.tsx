@@ -124,7 +124,23 @@ export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
   );
 }
 
-export const nodeTypes = { okta: OktaNode };
+/** A focus-view aggregate: "+N more" standing in for a hub's truncated neighbors. */
+export interface AggregateNodeData extends Record<string, unknown> {
+  hiddenCount: number;
+  hostId: string;
+}
+export type AggregateFlowNode = Node<AggregateNodeData, "aggregate">;
+
+export function AggregateNodeCard({ data }: NodeProps<AggregateFlowNode>) {
+  return (
+    <div className="aggregate-node" title="Browse the truncated neighbors">
+      <Handle id="t-left" type="target" position={Position.Left} />
+      +{data.hiddenCount} more
+    </div>
+  );
+}
+
+export const nodeTypes = { okta: OktaNode, aggregate: AggregateNodeCard };
 
 /** Legend: the resource flow, plus the two policy layers as card attributes (kept distinct). */
 export function Legend() {
