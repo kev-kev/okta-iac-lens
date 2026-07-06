@@ -11,6 +11,7 @@ import type { HighlightSet } from "./highlight.js";
 import { buildIndexes } from "./indexes.js";
 import { AUTO_THRESHOLD, buildFocusView, hiddenNeighbors } from "./build-focus-view.js";
 import { HiddenNeighborsPanel } from "./HiddenNeighborsPanel.js";
+import { FocusDetailPanel } from "./FocusDetailPanel.js";
 import { GraphView } from "./GraphView.js";
 import { TracePanel } from "./TracePanel.js";
 import { PolicyPanel } from "./PolicyPanel.js";
@@ -214,19 +215,28 @@ export function App() {
                 badges={badges}
                 aggregates={focus.aggregates}
                 focusNodeId={focusId}
-                viewKey={focusId ?? undefined}
                 showLabels={showLabels}
                 onFocusNode={(id) => setFocusId(id)}
+                onDefocus={() => setFocusId(null)}
                 onExpandAggregate={(hostId) => setExpandedHostId(hostId)}
                 onClear={() => setExpandedHostId(null)}
               />
-              {expandedHostId && expandedNeighbors && (
+              {expandedHostId && expandedNeighbors ? (
                 <HiddenNeighborsPanel
                   hostName={nameById.get(expandedHostId) ?? expandedHostId}
                   neighbors={expandedNeighbors}
                   onFocus={setFocusId}
                   onClear={() => setExpandedHostId(null)}
                 />
+              ) : (
+                focusId && (
+                  <FocusDetailPanel
+                    graph={graph}
+                    focusId={focusId}
+                    bucketByNodeId={badges?.bucketByNodeId}
+                    onFocus={setFocusId}
+                  />
+                )
               )}
             </div>
           </div>
@@ -243,7 +253,11 @@ export function App() {
             selectedPolicyId={selectedPolicyId}
             badges={badges}
             showLabels={showLabels}
-            onSelectGroup={(id) => setSelection({ kind: "group", id })}
+            onSelectGroup={(id) =>
+              setSelection((cur) =>
+                cur?.kind === "group" && cur.id === id ? null : { kind: "group", id },
+              )
+            }
             onSelectPolicy={(id) => setSelection({ kind: "policy", id })}
             onClear={() => setSelection(null)}
           />

@@ -26,6 +26,15 @@ export const NODE_HEIGHT = 84;
 export const AGG_WIDTH = 110;
 export const AGG_HEIGHT = 34;
 
+export interface LayoutSpacing {
+  nodesep: number;
+  ranksep: number;
+}
+/** Full-canvas spacing (M4/M5). */
+export const DEFAULT_SPACING: LayoutSpacing = { nodesep: 44, ranksep: 110 };
+/** Tighter spacing for bounded focus views, so a rank of neighbors packs into the viewport. */
+export const COMPACT_SPACING: LayoutSpacing = { nodesep: 28, ranksep: 90 };
+
 /**
  * Lay out the flow graph (plus any focus-view aggregates) left-to-right. Returns top-left
  * positions keyed by node/aggregate id (dagre reports centers; React Flow wants top-left).
@@ -33,9 +42,16 @@ export const AGG_HEIGHT = 34;
 export function layoutGraph(
   flow: OktaGraph,
   aggregates: AggregateNode[] = [],
+  spacing: LayoutSpacing = DEFAULT_SPACING,
 ): Map<string, NodePosition> {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "LR", nodesep: 44, ranksep: 110, marginx: 24, marginy: 24 });
+  g.setGraph({
+    rankdir: "LR",
+    nodesep: spacing.nodesep,
+    ranksep: spacing.ranksep,
+    marginx: 24,
+    marginy: 24,
+  });
   g.setDefaultEdgeLabel(() => ({}));
 
   const size = new Map<string, { width: number; height: number }>();

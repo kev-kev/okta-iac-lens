@@ -21,6 +21,7 @@
     "CoveragePanel.tsx",
     "Explorer.tsx",
     "VirtualList.tsx",
-    "HiddenNeighborsPanel.tsx"
+    "HiddenNeighborsPanel.tsx",
+    "FocusDetailPanel.tsx"
   ]
 }

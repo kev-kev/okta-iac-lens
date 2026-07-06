@@ -1,15 +1,51 @@
-import { useMemo } from "react";
-import { ReactFlow, Background, Controls, Panel } from "@xyflow/react";
+import { useEffect, useMemo } from "react";
+import { ReactFlow, Background, Controls, Panel, useReactFlow } from "@xyflow/react";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { EdgeKind } from "../../core/model.js";
 import type { CardModel } from "./derive-cards.js";
 import type { CoverageBadges } from "./coverage-badges.js";
 import type { AggregateNode } from "./build-focus-view.js";
-import { layoutGraph } from "./layout.js";
+import { COMPACT_SPACING, DEFAULT_SPACING, layoutGraph, NODE_HEIGHT } from "./layout.js";
+import type { NodePosition } from "./layout.js";
 import { edgeId } from "./highlight.js";
 import type { HighlightSet } from "./highlight.js";
 import { Legend, nodeTypes, ViewerContext } from "./nodes.js";
+
+/**
+ * Rendered inside <ReactFlow> so it can use the instance. On focus change: fitView frames the
+ * graph horizontally ("balanced with graph length"), then we override the vertical position so
+ * the focused card sits at viewport middle. Keyed to focusNodeId + node count so it re-runs when
+ * the view changes.
+ */
+function CenterOnFocus({
+  focusNodeId,
+  positions,
+  nodeCount,
+}: {
+  focusNodeId: string | null | undefined;
+  positions: Map<string, NodePosition>;
+  nodeCount: number;
+}) {
+  const rf = useReactFlow();
+  useEffect(() => {
+    if (!focusNodeId) {
+      rf.fitView({ padding: 0.15, maxZoom: 1 });
+      return;
+    }
+    const pos = positions.get(focusNodeId);
+    rf.fitView({ padding: 0.15, maxZoom: 1 });
+    if (pos) {
+      // Keep fitView's horizontal center + zoom; pin the focus card vertically centered.
+      const vp = rf.getViewport();
+      const width = window.innerWidth;
+      const centerXFlow = (width / 2 - vp.x) / vp.zoom;
+      rf.setCenter(centerXFlow, pos.y + NODE_HEIGHT / 2, { zoom: vp.zoom });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNodeId, nodeCount]);
+  return null;
+}
 
 /** Only spine edges remain in the flow graph now (policies are card attributes). */
 const EDGE_COLOR: Partial<Record<EdgeKind, string>> = {
@@ -29,15 +65,15 @@ export interface GraphViewProps {
   badges?: CoverageBadges | null;
   /** M6 focus-view aggregates ("+N more" for truncated hubs), laid out by dagre beside hosts. */
   aggregates?: AggregateNode[];
-  /** M6 focus mode: the focused node id — its card gets the FOCUS ring. */
+  /** M6 focus mode: the focused node id — its card gets the FOCUS ring, and drives centering + compact layout. */
   focusNodeId?: string | null;
-  /** Remounts the canvas (re-running fitView) when this changes — pass the focus id. */
-  viewKey?: string;
   showLabels?: boolean;
   onSelectGroup?: (groupId: string) => void;
   onSelectPolicy?: (policyId: string) => void;
-  /** M6 focus mode: clicking any real node re-focuses on it (overrides onSelectGroup when set). */
+  /** M6 focus mode: clicking a non-focused node re-focuses on it (overrides onSelectGroup when set). */
   onFocusNode?: (nodeId: string) => void;
+  /** M6 focus mode: clicking the ALREADY-focused node clears focus (back to the list). */
+  onDefocus?: () => void;
   /** M6 focus mode: clicking an aggregate opens its host's truncated-neighbor list. */
   onExpandAggregate?: (hostId: string) => void;
   onClear?: () => void;
@@ -50,16 +86,21 @@ export function GraphView({
   badges,
   aggregates,
   focusNodeId,
-  viewKey,
   showLabels = true,
   onSelectGroup,
   onSelectPolicy,
   onFocusNode,
+  onDefocus,
   onExpandAggregate,
   onClear,
 }: GraphViewProps) {
   const { flow, sessionPolicyByGroup, authPolicyByApp } = cards;
-  const positions = useMemo(() => layoutGraph(flow, aggregates ?? []), [flow, aggregates]);
+  // Focus views (focusNodeId set) pack tighter so a rank of neighbors fits the viewport.
+  const spacing = focusNodeId != null ? COMPACT_SPACING : DEFAULT_SPACING;
+  const positions = useMemo(
+    () => layoutGraph(flow, aggregates ?? [], spacing),
+    [flow, aggregates, spacing],
+  );
 
   const nodes: RFNode[] = useMemo(() => {
     const real: RFNode[] = flow.nodes.map((n) => {
@@ -158,7 +199,6 @@ export function GraphView({
     <div className="graph-canvas">
       <ViewerContext.Provider value={{ onSelectPolicy: (id) => onSelectPolicy?.(id) }}>
         <ReactFlow
-          key={viewKey}
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -170,13 +210,22 @@ export function GraphView({
             if (node.type === "aggregate") {
               onExpandAggregate?.(node.data.hostId as string);
             } else if (onFocusNode) {
-              onFocusNode(node.id); // focus mode: any node re-focuses
+              // focus mode: re-clicking the focused node clears it, otherwise re-focus.
+              if (node.id === focusNodeId) onDefocus?.();
+              else onFocusNode(node.id);
             } else if (node.data.kind === "Group") {
               onSelectGroup?.(node.id); // full-canvas mode: groups trace
             }
           }}
           onPaneClick={() => onClear?.()}
         >
+          {onFocusNode && (
+            <CenterOnFocus
+              focusNodeId={focusNodeId}
+              positions={positions}
+              nodeCount={flow.nodes.length}
+            />
+          )}
           <Background />
           <Controls />
           <Panel position="top-left">

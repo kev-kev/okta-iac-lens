@@ -316,6 +316,36 @@ body {
   opacity: 0;
 }
 
+/* React Flow zoom/fit controls ship light-themed — restyle for the dark canvas. */
+.react-flow__controls {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.react-flow__controls-button {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.react-flow__controls-button:hover {
+  background: #0b1220;
+}
+.react-flow__controls-button svg {
+  fill: var(--text);
+}
+
+/* Inline text-link row (secondary lists in the focus detail panel). */
+.link-row {
+  border: none;
+  background: transparent;
+  color: var(--kind-Group);
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.link-row:hover {
+  text-decoration: underline;
+}
+
 /* The focused card: unmistakable ring + tag, so "focus on X" visibly lands on X. */
 .okta-node.is-focus {
   box-shadow:
