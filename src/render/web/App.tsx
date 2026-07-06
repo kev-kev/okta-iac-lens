@@ -1,15 +1,21 @@
 import { useCallback, useMemo, useState } from "react";
 import type { DragEvent } from "react";
+import type { NodeKind } from "../../core/model.js";
 import { trace } from "../../core/access-paths.js";
 import type { TraceResult } from "../../core/access-paths.js";
 import { EnvelopeError, parseEnvelope } from "./parse-envelope.js";
 import type { ParsedEnvelope } from "./parse-envelope.js";
 import { deriveCards } from "./derive-cards.js";
 import { coverageBadges } from "./coverage-badges.js";
-import { edgeId, highlightForPolicy, highlightForTrace } from "./highlight.js";
-import type { HighlightSet } from "./highlight.js";
+import { highlightForPolicy, highlightForTrace } from "./highlight.js";
 import { buildIndexes } from "./indexes.js";
-import { AUTO_THRESHOLD, buildFocusView, hiddenNeighbors } from "./build-focus-view.js";
+import {
+  AUTO_THRESHOLD,
+  buildFocusView,
+  hiddenNeighbors,
+  MAX_PER_SIDE,
+  MIN_PER_SIDE,
+} from "./build-focus-view.js";
 import { HiddenNeighborsPanel } from "./HiddenNeighborsPanel.js";
 import { FocusDetailPanel } from "./FocusDetailPanel.js";
 import { GraphView } from "./GraphView.js";
@@ -25,14 +31,14 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [focusId, setFocusIdRaw] = useState<string | null>(null);
-  const [expandedHostId, setExpandedHostId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<{ hostId: string; kind: NodeKind } | null>(null);
   const [showLabels, setShowLabels] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
 
   /** Changing focus always closes the hidden-neighbors panel. */
   const setFocusId = useCallback((id: string | null) => {
     setFocusIdRaw(id);
-    setExpandedHostId(null);
+    setExpanded(null);
   }, []);
 
   const load = useCallback(async (file: File) => {
@@ -115,29 +121,29 @@ export function App() {
   const isLarge = (graph?.nodes.length ?? 0) > AUTO_THRESHOLD;
   const indexes = useMemo(() => (graph ? buildIndexes(graph) : null), [graph]);
 
+  // Viewport-adaptive per-side neighbor cap: how many cards fit the canvas height, clamped.
+  const perSideCap = useMemo(() => {
+    const rowPx = 96; // ~card height + gap
+    const fit = Math.floor((window.innerHeight - 160) / rowPx);
+    return Math.max(MIN_PER_SIDE, Math.min(MAX_PER_SIDE, fit));
+  }, []);
+
   const focus = useMemo(() => {
     if (!graph || !indexes || !isLarge || !focusId) return null;
-    return buildFocusView(graph, indexes, [focusId], { bucketByNodeId: badges?.bucketByNodeId });
-  }, [graph, indexes, isLarge, focusId, badges]);
+    return buildFocusView(graph, indexes, [focusId], {
+      perSideCap,
+      bucketByNodeId: badges?.bucketByNodeId,
+    });
+  }, [graph, indexes, isLarge, focusId, perSideCap, badges]);
   const focusCards = useMemo(() => (focus ? deriveCards(focus.graph) : null), [focus]);
 
-  /** Emphasize the focus + its direct neighbors; dim the depth-2 frontier (context, not story). */
-  const focusHighlight = useMemo<HighlightSet | null>(() => {
-    if (!focus) return null;
-    const near = new Set<string>();
-    for (const [id, depth] of focus.depthById) if (depth <= 1) near.add(id);
-    const edgeIds = new Set<string>();
-    for (const e of focus.graph.edges) if (near.has(e.from) && near.has(e.to)) edgeIds.add(edgeId(e));
-    return { nodeIds: near, edgeIds };
-  }, [focus]);
-
-  /** What the clicked "+N more" stands for, as nodes (for the panel list). */
+  /** What the clicked "+N more <kind>" stands for, as nodes (for the panel list). */
   const expandedNeighbors = useMemo(() => {
-    if (!focus || !indexes || !expandedHostId) return null;
-    return hiddenNeighbors(focus, indexes, expandedHostId)
+    if (!focus || !indexes || !expanded) return null;
+    return hiddenNeighbors(focus, indexes, expanded.hostId, expanded.kind)
       .map((id) => indexes.nodeById.get(id))
       .filter((n): n is NonNullable<typeof n> => n != null);
-  }, [focus, indexes, expandedHostId]);
+  }, [focus, indexes, expanded]);
 
   return (
     <div className="app" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -205,28 +211,27 @@ export function App() {
               </button>
               <span className="meta">
                 Focused on <strong>{nameById.get(focusId ?? "") ?? focusId}</strong>
-                {focus.truncated ? " · view truncated to stay legible" : ""}
+                {focus.truncated ? " · showing direct connections; use “+N more” for the rest" : ""}
               </span>
             </div>
             <div className="workspace">
               <GraphView
                 cards={focusCards}
-                highlight={focusHighlight}
                 badges={badges}
                 aggregates={focus.aggregates}
                 focusNodeId={focusId}
                 showLabels={showLabels}
                 onFocusNode={(id) => setFocusId(id)}
                 onDefocus={() => setFocusId(null)}
-                onExpandAggregate={(hostId) => setExpandedHostId(hostId)}
-                onClear={() => setExpandedHostId(null)}
+                onExpandAggregate={(hostId, kind) => setExpanded({ hostId, kind })}
+                onClear={() => setExpanded(null)}
               />
-              {expandedHostId && expandedNeighbors ? (
+              {expanded && expandedNeighbors ? (
                 <HiddenNeighborsPanel
-                  hostName={nameById.get(expandedHostId) ?? expandedHostId}
+                  hostName={nameById.get(expanded.hostId) ?? expanded.hostId}
                   neighbors={expandedNeighbors}
                   onFocus={setFocusId}
-                  onClear={() => setExpandedHostId(null)}
+                  onClear={() => setExpanded(null)}
                 />
               ) : (
                 focusId && (

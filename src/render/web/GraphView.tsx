@@ -2,12 +2,13 @@ import { useEffect, useMemo } from "react";
 import { ReactFlow, Background, Controls, Panel, useReactFlow } from "@xyflow/react";
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { EdgeKind } from "../../core/model.js";
+import type { EdgeKind, NodeKind } from "../../core/model.js";
 import type { CardModel } from "./derive-cards.js";
 import type { CoverageBadges } from "./coverage-badges.js";
 import type { AggregateNode } from "./build-focus-view.js";
 import { COMPACT_SPACING, DEFAULT_SPACING, layoutGraph, NODE_HEIGHT } from "./layout.js";
 import type { NodePosition } from "./layout.js";
+import { aggregateSide } from "./build-focus-view.js";
 import { edgeId } from "./highlight.js";
 import type { HighlightSet } from "./highlight.js";
 import { Legend, nodeTypes, ViewerContext } from "./nodes.js";
@@ -29,19 +30,19 @@ function CenterOnFocus({
 }) {
   const rf = useReactFlow();
   useEffect(() => {
-    if (!focusNodeId) {
-      rf.fitView({ padding: 0.15, maxZoom: 1 });
-      return;
-    }
-    const pos = positions.get(focusNodeId);
-    rf.fitView({ padding: 0.15, maxZoom: 1 });
-    if (pos) {
-      // Keep fitView's horizontal center + zoom; pin the focus card vertically centered.
-      const vp = rf.getViewport();
-      const width = window.innerWidth;
-      const centerXFlow = (width / 2 - vp.x) / vp.zoom;
-      rf.setCenter(centerXFlow, pos.y + NODE_HEIGHT / 2, { zoom: vp.zoom });
-    }
+    // Defer to the next frame so fitView has committed its transform before we read it —
+    // reading synchronously right after fitView gave stale numbers (the "works sometimes" bug).
+    const raf = requestAnimationFrame(() => {
+      rf.fitView({ padding: 0.2, maxZoom: 1 });
+      const pos = focusNodeId ? positions.get(focusNodeId) : undefined;
+      if (pos) {
+        // Keep fitView's horizontal center + zoom; pin the focus card vertically centered.
+        const vp = rf.getViewport();
+        const centerXFlow = (window.innerWidth / 2 - vp.x) / vp.zoom;
+        rf.setCenter(centerXFlow, pos.y + NODE_HEIGHT / 2, { zoom: vp.zoom, duration: 200 });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNodeId, nodeCount]);
   return null;
@@ -74,8 +75,8 @@ export interface GraphViewProps {
   onFocusNode?: (nodeId: string) => void;
   /** M6 focus mode: clicking the ALREADY-focused node clears focus (back to the list). */
   onDefocus?: () => void;
-  /** M6 focus mode: clicking an aggregate opens its host's truncated-neighbor list. */
-  onExpandAggregate?: (hostId: string) => void;
+  /** M6 focus mode: clicking an aggregate opens the host's truncated-neighbor list (of that kind). */
+  onExpandAggregate?: (hostId: string, kind: NodeKind) => void;
   onClear?: () => void;
 }
 
@@ -136,7 +137,7 @@ export function GraphView({
           id: agg.id,
           type: "aggregate" as const,
           position: pos,
-          data: { hiddenCount: agg.hiddenCount, hostId: agg.hostId },
+          data: { hiddenCount: agg.hiddenCount, hostId: agg.hostId, kind: agg.kind },
         },
       ];
     });
@@ -166,6 +167,8 @@ export function GraphView({
           id,
           source: e.from,
           target: e.to,
+          sourceHandle: "s-right", // flow runs left→right: leave right, enter left
+          targetHandle: "t-left",
           label,
           animated: active === true,
           style: {
@@ -180,18 +183,23 @@ export function GraphView({
           labelBgBorderRadius: 6,
         };
       });
-    const aggEdges: RFEdge[] = (aggregates ?? []).flatMap((agg) =>
-      positions.get(agg.hostId)
-        ? [
-            {
-              id: `e:${agg.id}`,
-              source: agg.hostId,
-              target: agg.id,
-              style: { stroke: "#64748b", strokeDasharray: "2 3" },
-            },
-          ]
-        : [],
-    );
+    const kindById = new Map<string, NodeKind>(flow.nodes.map((n) => [n.id, n.kind]));
+    const aggEdges: RFEdge[] = (aggregates ?? []).flatMap((agg) => {
+      if (!positions.get(agg.hostId)) return [];
+      const hostKind = kindById.get(agg.hostId);
+      const left = hostKind ? aggregateSide(hostKind, agg.kind) === "left" : false;
+      // Draw upstream pills host(left handle)→agg(right handle); downstream host(right)→agg(left).
+      return [
+        {
+          id: `e:${agg.id}`,
+          source: agg.hostId,
+          target: agg.id,
+          sourceHandle: left ? "s-left" : "s-right",
+          targetHandle: left ? "t-right" : "t-left",
+          style: { stroke: "#64748b", strokeDasharray: "2 3" },
+        },
+      ];
+    });
     return [...real, ...aggEdges];
   }, [flow, highlight, showLabels, badges, aggregates, positions]);
 
@@ -208,7 +216,7 @@ export function GraphView({
           nodesConnectable={false}
           onNodeClick={(_event, node) => {
             if (node.type === "aggregate") {
-              onExpandAggregate?.(node.data.hostId as string);
+              onExpandAggregate?.(node.data.hostId as string, node.data.kind as NodeKind);
             } else if (onFocusNode) {
               // focus mode: re-clicking the focused node clears it, otherwise re-focus.
               if (node.id === focusNodeId) onDefocus?.();

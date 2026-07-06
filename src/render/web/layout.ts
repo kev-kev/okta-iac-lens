@@ -11,8 +11,9 @@
  */
 
 import dagre from "@dagrejs/dagre";
-import type { OktaGraph } from "../../core/model.js";
+import type { NodeKind, OktaGraph } from "../../core/model.js";
 import type { AggregateNode } from "./build-focus-view.js";
+import { aggregateSide } from "./build-focus-view.js";
 
 export interface NodePosition {
   x: number;
@@ -66,8 +67,13 @@ export function layoutGraph(
   for (const edge of flow.edges) {
     g.setEdge(edge.from, edge.to);
   }
+  const kindById = new Map<string, NodeKind>(flow.nodes.map((n) => [n.id, n.kind]));
   for (const agg of aggregates) {
-    g.setEdge(agg.hostId, agg.id); // a leaf: dagre ranks it after its host, no crossings added
+    // Rank the pill on the correct side of its host: upstream neighbor kinds left, else right.
+    const hostKind = kindById.get(agg.hostId);
+    const side = hostKind ? aggregateSide(hostKind, agg.kind) : "right";
+    if (side === "left") g.setEdge(agg.id, agg.hostId);
+    else g.setEdge(agg.hostId, agg.id);
   }
 
   dagre.layout(g);

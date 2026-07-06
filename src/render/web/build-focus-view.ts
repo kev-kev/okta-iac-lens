@@ -1,63 +1,59 @@
 /**
- * web/build-focus-view: turn one or more focus nodes into a BOUNDED, TRACE-SHAPED subgraph the
- * canvas can render legibly, no matter how large the org is. PURE, DOM-free.
+ * web/build-focus-view: turn a focus node into its DEPTH-1 EGO VIEW — the focus plus ONLY its
+ * direct neighbors. PURE, DOM-free.
  *
- * This is the mechanism behind "no canvas render depends on org size" (CLAUDE.md scale strategy):
- *  - DEPTH-LIMITED expansion from the foci over the flow adjacency: the focus admits up to
- *    `hubK` direct neighbors; each depth-1 node admits up to `neighborK`; depth-2 nodes are
- *    frontier (admit nothing). The view answers "what does THIS node reach" — it must never
- *    flood the budget with nodes three hops away through a hub (the original design flaw:
- *    focusing a group pulled in ~140 sibling groups of a hub app, pure noise).
- *  - a global visible-node BUDGET as the hard cap;
- *  - "N more" AGGREGATES only on the focus and its direct neighbors (where they're actionable),
- *    each backed by a browsable list — truncation is visible, never silent.
- * At equal reach, UNMANAGED neighbors are admitted first (the coverage gap is what you're hunting).
+ * Why depth-1 (design revision 2, 2026-07-06): a depth-2 walk answered the wrong question —
+ * focusing a group pulled in its apps' sibling groups (two hops away), producing spaghetti and
+ * pushing the actual apps off-screen. The view now answers exactly "what does THIS node directly
+ * connect to": for a group, the rules that populate it and the apps it grants; for an app, the
+ * groups that grant it; for a rule, the groups it populates. You walk the graph by clicking a
+ * neighbor to re-focus — never by rendering two hops at once.
  *
- * Returns a real `OktaGraph` (consumable by the existing layout/deriveCards/GraphView pipeline)
- * plus a separate `aggregates` list the UI renders as special nodes.
+ * Neighbors are partitioned BY KIND and each kind is capped at `perSideCap` (unmanaged-first, so
+ * coverage gaps stay visible); the remainder of a kind becomes ONE typed "+X more <kind>"
+ * aggregate the UI renders as a pill → browsable panel. `perSideCap` is viewport-adaptive
+ * (computed by the UI from canvas height), so the neighbor column always fits comfortably.
+ *
+ * Returns a real `OktaGraph` (drop-in for the existing layout/deriveCards/GraphView pipeline)
+ * plus the `aggregates` list.
  */
 
-import type { OktaGraph } from "../../core/model.js";
+import type { NodeKind, OktaGraph } from "../../core/model.js";
 import type { CoverageBucket } from "../../analysis/coverage.js";
 import type { GraphIndexes } from "./indexes.js";
 
 /** Above this many nodes the viewer switches from full-canvas to query-first (CLAUDE.md scale). */
 export const AUTO_THRESHOLD = 300;
-/** Default max real visible nodes in a focus view (hard cap). */
-export const FOCUS_BUDGET = 150;
-/** Max direct neighbors the FOCUS admits before the rest aggregate. */
-export const HUB_K = 12;
-/** Max neighbors a depth-1 node admits (context, not flooding). Depth-2 admits none. */
-export const NEIGHBOR_K = 4;
+/** Default per-kind neighbor cap (the UI overrides with a viewport-adaptive value, clamped below). */
+export const PER_SIDE_CAP = 10;
+/** Clamp bounds for the viewport-adaptive cap. */
+export const MIN_PER_SIDE = 6;
+export const MAX_PER_SIDE = 14;
 
 export interface AggregateNode {
-  /** Synthetic id, `agg:<hostId>`. */
+  /** Synthetic id, `agg:<hostId>:<kind>`. */
   id: string;
-  /** The visible node this aggregate hangs off. */
+  /** The focus node this aggregate hangs off. */
   hostId: string;
-  /** How many of the host's neighbors were truncated into this summary. */
+  /** The kind of neighbor being summarized (for the "+N more apps" label). */
+  kind: NodeKind;
+  /** How many neighbors of this kind were truncated into the summary. */
   hiddenCount: number;
 }
 
 export interface FocusView {
-  /** The bounded REAL subgraph — real nodes + flow edges, drop-in for the existing pipeline. */
+  /** The depth-1 REAL subgraph — real nodes + flow edges, drop-in for the existing pipeline. */
   graph: OktaGraph;
-  /** One "N more" summary per hub whose fan-out was truncated (sorted by host id). */
+  /** One typed "+N more <kind>" summary per truncated neighbor kind (sorted by kind). */
   aggregates: AggregateNode[];
-  /** True if anything was omitted (a hub cap or the budget was hit). */
+  /** True if any neighbor kind was truncated. */
   truncated: boolean;
-  /** BFS depth per visible node (focus = 0). Lets the UI emphasize near context, dim the frontier. */
-  depthById: Map<string, number>;
 }
 
 export interface FocusOptions {
-  /** Max real visible nodes (hard cap). Default 150. */
-  budget?: number;
-  /** Max direct neighbors the focus admits before the rest aggregate. Default 12. */
-  hubK?: number;
-  /** Max neighbors a depth-1 node admits. Depth-2 nodes admit none. Default 4. */
-  neighborK?: number;
-  /** Coverage buckets — `unmanaged` nodes are preferentially admitted at equal reach. */
+  /** Max neighbors admitted per kind before the rest aggregate. Default PER_SIDE_CAP. */
+  perSideCap?: number;
+  /** Coverage buckets — `unmanaged` neighbors are admitted first (gaps stay visible). */
   bucketByNodeId?: Map<string, CoverageBucket>;
 }
 
@@ -67,69 +63,76 @@ export function buildFocusView(
   foci: string[],
   options: FocusOptions = {},
 ): FocusView {
-  const budget = options.budget ?? FOCUS_BUDGET;
-  const hubK = options.hubK ?? HUB_K;
-  const neighborK = options.neighborK ?? NEIGHBOR_K;
+  const cap = options.perSideCap ?? PER_SIDE_CAP;
   const bucket = options.bucketByNodeId;
-  // Lower sort key = admitted first: unmanaged before others, then id for determinism.
   const rank = (id: string): number => (bucket?.get(id) === "unmanaged" ? 0 : 1);
-  /** How many neighbors a node at this depth may admit. Depth ≥ 2 is frontier. */
-  const capAtDepth = (depth: number): number => (depth === 0 ? hubK : depth === 1 ? neighborK : 0);
 
-  const depthOf = new Map<string, number>(); // visible set, with BFS depth
-  const queue: string[] = [];
-  for (const id of foci) {
-    if (indexes.nodeById.has(id) && !depthOf.has(id) && depthOf.size < budget) {
-      depthOf.set(id, 0);
-      queue.push(id);
+  const visible = new Set<string>();
+  for (const id of foci) if (indexes.nodeById.has(id)) visible.add(id);
+
+  const aggregates: AggregateNode[] = [];
+
+  for (const focusId of foci) {
+    if (!indexes.nodeById.has(focusId)) continue;
+    // Partition this focus's direct neighbors by node kind.
+    const byKind = new Map<NodeKind, string[]>();
+    for (const nb of indexes.neighbors.get(focusId) ?? []) {
+      const node = indexes.nodeById.get(nb);
+      if (!node) continue;
+      const list = byKind.get(node.kind);
+      if (list) list.push(nb);
+      else byKind.set(node.kind, [nb]);
+    }
+    // Admit up to `cap` per kind (unmanaged-first, then deterministic); rest -> one typed pill.
+    for (const [kind, ids] of byKind) {
+      ids.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+      let admitted = 0;
+      for (const nb of ids) {
+        if (admitted >= cap) break;
+        visible.add(nb);
+        admitted++;
+      }
+      const hidden = ids.length - admitted;
+      if (hidden > 0) {
+        aggregates.push({ id: `agg:${focusId}:${kind}`, hostId: focusId, kind, hiddenCount: hidden });
+      }
     }
   }
 
-  for (let head = 0; head < queue.length; head++) {
-    if (depthOf.size >= budget) break;
-    const id = queue[head];
-    const cap = capAtDepth(depthOf.get(id) ?? 0);
-    if (cap === 0) continue; // frontier: its unexpanded fan-out is NOT this view's story
-    const neighborIds = (indexes.neighbors.get(id) ?? [])
-      .slice()
-      .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-    let admitted = 0;
-    for (const nb of neighborIds) {
-      if (depthOf.has(nb)) continue; // already in via another path — free
-      if (admitted >= cap || depthOf.size >= budget) break; // remainder aggregates
-      depthOf.set(nb, (depthOf.get(id) ?? 0) + 1);
-      queue.push(nb);
-      admitted++;
-    }
-  }
-
-  const nodes = graph.nodes.filter((n) => depthOf.has(n.id));
+  const nodes = graph.nodes.filter((n) => visible.has(n.id));
   const edges = graph.edges.filter(
     (e) =>
-      (e.kind === "populates" || e.kind === "grants") &&
-      depthOf.has(e.from) &&
-      depthOf.has(e.to),
+      (e.kind === "populates" || e.kind === "grants") && visible.has(e.from) && visible.has(e.to),
   );
+  aggregates.sort((a, b) => a.hostId.localeCompare(b.hostId) || a.kind.localeCompare(b.kind));
 
-  // Aggregates ONLY where they're actionable: the focus and its direct neighbors. A deeper
-  // frontier node's unexpanded fan-out is expected, not signal — pills there are pure noise.
-  const aggregates: AggregateNode[] = [];
-  for (const [id, depth] of depthOf) {
-    if (depth > 1) continue;
-    let hidden = 0;
-    for (const nb of indexes.neighbors.get(id) ?? []) {
-      if (!depthOf.has(nb)) hidden++;
-    }
-    if (hidden > 0) aggregates.push({ id: `agg:${id}`, hostId: id, hiddenCount: hidden });
-  }
-  aggregates.sort((a, b) => a.hostId.localeCompare(b.hostId));
-
-  return { graph: { nodes, edges }, aggregates, truncated: aggregates.length > 0, depthById: depthOf };
+  return { graph: { nodes, edges }, aggregates, truncated: aggregates.length > 0 };
 }
 
-/** The neighbors of `hostId` NOT shown in the given focus view — what its "+N more" stands for.
- * PURE; used by the hidden-neighbors panel (aggregate click → browsable list, per the plan). */
-export function hiddenNeighbors(view: FocusView, indexes: GraphIndexes, hostId: string): string[] {
+/** Flow order (left→right): rules populate groups, groups grant apps. Policies share a lane. */
+const FLOW_ORDER: Record<NodeKind, number> = {
+  GroupRule: 0,
+  Group: 1,
+  GlobalSessionPolicy: 1,
+  App: 2,
+  AppAuthPolicy: 2,
+};
+
+/** Which side of the focus a truncated-neighbor pill belongs on: upstream kinds left, else right. */
+export function aggregateSide(hostKind: NodeKind, neighborKind: NodeKind): "left" | "right" {
+  return FLOW_ORDER[neighborKind] < FLOW_ORDER[hostKind] ? "left" : "right";
+}
+
+/** The neighbors of `hostId` of a given kind NOT shown in the view — what a "+N more" stands for.
+ * PURE; used by the panel (pill click → browsable list). */
+export function hiddenNeighbors(
+  view: FocusView,
+  indexes: GraphIndexes,
+  hostId: string,
+  kind?: NodeKind,
+): string[] {
   const visible = new Set(view.graph.nodes.map((n) => n.id));
-  return (indexes.neighbors.get(hostId) ?? []).filter((id) => !visible.has(id)).sort();
+  return (indexes.neighbors.get(hostId) ?? [])
+    .filter((id) => !visible.has(id) && (kind == null || indexes.nodeById.get(id)?.kind === kind))
+    .sort();
 }
