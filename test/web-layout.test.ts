@@ -72,7 +72,7 @@ describe("layoutGraph (dagre)", () => {
     const withAgg = layoutGraph(flow, [
       { id: "agg:g-eng:App", hostId: "g-eng", kind: "App", hiddenCount: 5 },
     ]);
-    const agg = withAgg.get("agg:g-eng");
+    const agg = withAgg.get("agg:g-eng:App");
     const host = withAgg.get("g-eng");
     expect(agg).toBeDefined();
     expect(host).toBeDefined();

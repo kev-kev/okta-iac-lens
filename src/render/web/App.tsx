@@ -23,6 +23,10 @@ import { TracePanel } from "./TracePanel.js";
 import { PolicyPanel } from "./PolicyPanel.js";
 import { CoveragePanel } from "./CoveragePanel.js";
 import { Explorer } from "./Explorer.js";
+import { buildCohorts } from "./cohorts.js";
+import { OverviewCanvas } from "./OverviewCanvas.js";
+import { CohortList } from "./CohortList.js";
+import { VirtualList } from "./VirtualList.js";
 
 type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
 
@@ -32,6 +36,9 @@ export function App() {
   const [selection, setSelection] = useState<Selection>(null);
   const [focusId, setFocusIdRaw] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<{ hostId: string; kind: NodeKind } | null>(null);
+  const [cohortId, setCohortId] = useState<string | null>(null);
+  const [browseAll, setBrowseAll] = useState(false);
+  const [query, setQuery] = useState("");
   const [showLabels, setShowLabels] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
 
@@ -47,6 +54,9 @@ export function App() {
       setEnvelope(parsed);
       setSelection(null);
       setFocusId(null);
+      setCohortId(null);
+      setBrowseAll(false);
+      setQuery("");
       setError(null);
     } catch (e) {
       setEnvelope(null);
@@ -137,6 +147,20 @@ export function App() {
   }, [graph, indexes, isLarge, focusId, perSideCap, badges]);
   const focusCards = useMemo(() => (focus ? deriveCards(focus.graph) : null), [focus]);
 
+  // Aggregated landing model + search results (large tenants only).
+  const cohortModel = useMemo(
+    () => (graph && cards && isLarge ? buildCohorts(graph, cards) : null),
+    [graph, cards, isLarge],
+  );
+  const activeCohort = useMemo(
+    () => cohortModel?.cohorts.find((c) => c.id === cohortId) ?? null,
+    [cohortModel, cohortId],
+  );
+  const searchResults = useMemo(() => {
+    if (!indexes || query.trim().length < 2) return null;
+    return indexes.search(query, 200);
+  }, [indexes, query]);
+
   /** What the clicked "+N more <kind>" stands for, as nodes (for the panel list). */
   const expandedNeighbors = useMemo(() => {
     if (!focus || !indexes || !expanded) return null;
@@ -165,9 +189,17 @@ export function App() {
             <span className="meta">
               source: {envelope.source} · {envelope.graph.nodes.length} nodes
               {isLarge
-                ? " · large tenant: search or pick a resource to focus"
+                ? " · large tenant"
                 : " · click a group to trace, or a policy badge to see its reach"}
             </span>
+            {isLarge && (
+              <input
+                className="header-search"
+                placeholder="Search all resources…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            )}
             {coverage && (
               <label className="toggle">
                 <input
@@ -203,11 +235,41 @@ export function App() {
           </p>
         </div>
       ) : isLarge ? (
-        focus && focusCards ? (
+        searchResults ? (
+          <div className="explorer-main">
+            <div className="focus-bar">
+              <button type="button" className="clear-btn" onClick={() => setQuery("")}>
+                ← Overview
+              </button>
+              <span className="meta">
+                {searchResults.length} match{searchResults.length === 1 ? "" : "es"} for “{query}”
+              </span>
+            </div>
+            <VirtualList
+              items={searchResults}
+              rowHeight={40}
+              height={560}
+              keyOf={(n) => n.id}
+              renderRow={(n) => (
+                <button
+                  type="button"
+                  className="explorer-row"
+                  onClick={() => {
+                    setQuery("");
+                    setFocusId(n.id);
+                  }}
+                >
+                  <span className="row-name">{n.name}</span>
+                  <span className="row-meta">{n.kind}</span>
+                </button>
+              )}
+            />
+          </div>
+        ) : focus && focusCards ? (
           <div className="focus-view">
             <div className="focus-bar">
               <button type="button" className="clear-btn" onClick={() => setFocusId(null)}>
-                ← All resources
+                ← Overview
               </button>
               <span className="meta">
                 Focused on <strong>{nameById.get(focusId ?? "") ?? focusId}</strong>
@@ -245,11 +307,38 @@ export function App() {
               )}
             </div>
           </div>
-        ) : (
-          indexes && (
+        ) : activeCohort && indexes ? (
+          <CohortList
+            label={activeCohort.label}
+            memberIds={activeCohort.memberIds}
+            indexes={indexes}
+            onFocus={setFocusId}
+            onBack={() => setCohortId(null)}
+          />
+        ) : browseAll && indexes ? (
+          <div className="focus-view">
+            <div className="focus-bar">
+              <button type="button" className="clear-btn" onClick={() => setBrowseAll(false)}>
+                ← Overview
+              </button>
+              <span className="meta">Browse all resources</span>
+            </div>
             <Explorer graph={graph} indexes={indexes} coverage={coverage} onFocus={setFocusId} />
-          )
-        )
+          </div>
+        ) : cohortModel ? (
+          <div className="explorer">
+            <div className="explorer-main">
+              <div className="overview-bar">
+                <span className="meta">Your tenant at a glance — click a group to drill in</span>
+                <button type="button" className="kind-tab" onClick={() => setBrowseAll(true)}>
+                  Browse all resources
+                </button>
+              </div>
+              <OverviewCanvas model={cohortModel} onSelectCohort={setCohortId} />
+            </div>
+            {coverage && <CoveragePanel report={coverage} />}
+          </div>
+        ) : null
       ) : cards ? (
         <div className="workspace">
           <GraphView
