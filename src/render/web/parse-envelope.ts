@@ -8,7 +8,7 @@
  */
 
 import type { Edge, GraphNode, OktaGraph } from "../../core/model.js";
-import type { CoverageReport } from "../../analysis/coverage.js";
+import type { SlimCoverageReport } from "../../analysis/coverage.js";
 import { ENVELOPE_VERSION } from "../envelope.js";
 import type { GraphEnvelope, GraphSource } from "../envelope.js";
 
@@ -24,7 +24,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 /** Lenient structural check — enough to know the overlay is usable, not a full schema. */
-function looksLikeCoverage(v: unknown): v is CoverageReport {
+function looksLikeCoverage(v: unknown): v is SlimCoverageReport {
   return (
     isObject(v) &&
     Array.isArray(v.perKind) &&
@@ -55,7 +55,7 @@ export function parseEnvelope(input: unknown): ParsedEnvelope {
   const generatedAt = typeof input.generatedAt === "string" ? input.generatedAt : "";
 
   // Optional overlay: valid -> keep; present-but-malformed -> drop + notice; absent -> nothing.
-  let coverage: CoverageReport | undefined;
+  let coverage: SlimCoverageReport | undefined;
   let notice: string | undefined;
   if ("coverage" in input && input.coverage !== undefined) {
     if (looksLikeCoverage(input.coverage)) {

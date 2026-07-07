@@ -6,7 +6,13 @@
 
 import { describe, expect, it } from "vitest";
 import { deriveCards } from "../src/render/web/derive-cards.js";
-import { layoutGraph, NODE_HEIGHT, NODE_WIDTH } from "../src/render/web/layout.js";
+import {
+  COMPACT_SPACING,
+  DEFAULT_SPACING,
+  layoutGraph,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+} from "../src/render/web/layout.js";
 import { graphFromFixture } from "./fixture.js";
 
 const flow = deriveCards(graphFromFixture()).flow;
@@ -51,5 +57,26 @@ describe("layoutGraph (dagre)", () => {
   it("is deterministic across runs", () => {
     const again = layoutGraph(flow);
     for (const n of flow.nodes) expect(again.get(n.id)).toEqual(pos.get(n.id));
+  });
+
+  it("compact spacing packs a shared rank tighter than the default", () => {
+    // Two groups sharing the app column (a-gh, a-dd apart) — measure their vertical gap.
+    const gap = (s: typeof DEFAULT_SPACING): number => {
+      const p = layoutGraph(flow, [], s);
+      return Math.abs((p.get("a-gh")?.y ?? 0) - (p.get("a-dd")?.y ?? 0));
+    };
+    expect(gap(COMPACT_SPACING)).toBeLessThan(gap(DEFAULT_SPACING));
+  });
+
+  it("lays out focus-view aggregates as real dagre nodes after their host (no manual offsets)", () => {
+    const withAgg = layoutGraph(flow, [
+      { id: "agg:g-eng:App", hostId: "g-eng", kind: "App", hiddenCount: 5 },
+    ]);
+    const agg = withAgg.get("agg:g-eng:App");
+    const host = withAgg.get("g-eng");
+    expect(agg).toBeDefined();
+    expect(host).toBeDefined();
+    expect(agg!.x).toBeGreaterThan(host!.x); // LR: ranked after its host
+    expect(Number.isFinite(agg!.y)).toBe(true);
   });
 });

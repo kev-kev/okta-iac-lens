@@ -194,6 +194,233 @@ body {
   line-height: 1.4;
 }
 
+/* --- M6: aggregated cohort overview --------------------------------------- */
+.header-search {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0b1220;
+  color: var(--text);
+  font-size: 13px;
+  min-width: 240px;
+}
+.overview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 2px 10px;
+}
+.cohort-node {
+  width: 240px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.cohort-node:hover {
+  border-color: var(--muted);
+}
+.cohort-node.lane-rule {
+  border-left-color: var(--kind-GroupRule);
+}
+.cohort-node.lane-group {
+  border-left-color: var(--kind-Group);
+}
+.cohort-node.lane-app {
+  border-left-color: var(--kind-App);
+}
+.cohort-count {
+  font-size: 22px;
+  font-weight: 700;
+}
+.cohort-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.cohort-sublabel {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cohort-node .react-flow__handle {
+  opacity: 0;
+}
+
+/* --- M6: query-first explorer + focus view -------------------------------- */
+.explorer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.explorer-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 10px;
+}
+.search {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0b1220;
+  color: var(--text);
+  font-size: 14px;
+}
+.kind-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.kind-tab {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0b1220;
+  color: var(--text);
+}
+.kind-tab.is-active {
+  border-color: var(--kind-Group);
+  color: #fff;
+}
+.tab-count {
+  color: var(--muted);
+}
+.list-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.vlist {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.explorer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  padding: 0 12px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.explorer-row:hover {
+  background: #0b1220;
+}
+.explorer-row.is-static {
+  cursor: default;
+  color: var(--muted);
+}
+.row-name {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-meta {
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+  margin-left: 12px;
+}
+
+.focus-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.focus-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.aggregate-node {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--muted);
+  background: #0b1220;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.aggregate-node:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+.aggregate-node .react-flow__handle {
+  opacity: 0;
+}
+
+/* React Flow zoom/fit controls ship light-themed — restyle for the dark canvas. */
+.react-flow__controls {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.react-flow__controls-button {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.react-flow__controls-button:hover {
+  background: #0b1220;
+}
+.react-flow__controls-button svg {
+  fill: var(--text);
+}
+
+/* Inline text-link row (secondary lists in the focus detail panel). */
+.link-row {
+  border: none;
+  background: transparent;
+  color: var(--kind-Group);
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.link-row:hover {
+  text-decoration: underline;
+}
+
+/* The focused card: unmistakable ring + tag, so "focus on X" visibly lands on X. */
+.okta-node.is-focus {
+  box-shadow:
+    0 0 0 3px #38bdf8,
+    0 0 18px rgba(56, 189, 248, 0.35);
+}
+.focus-tag {
+  position: absolute;
+  top: -9px;
+  left: 8px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #38bdf8;
+  color: #0b1220;
+}
+
 .dropzone {
   flex: 1;
   display: flex;

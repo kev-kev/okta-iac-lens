@@ -3,14 +3,14 @@
  * coverage %, per-kind rows, the stale + excluded lists (stale is panel-only by design), and
  * the recommended steps. Recommendations come from the same pure `recommend()` the CLI uses.
  */
-import type { CoverageReport } from "../../analysis/coverage.js";
+import type { SlimCoverageReport } from "../../analysis/coverage.js";
 import { recommend } from "../../analysis/recommendations.js";
 
 function pct(v: number | null): string {
   return v === null ? "n/a" : `${Math.round(v * 100)}%`;
 }
 
-export function CoveragePanel({ report }: { report: CoverageReport }) {
+export function CoveragePanel({ report }: { report: SlimCoverageReport }) {
   const o = report.overall;
   const recs = recommend(report);
   const stale = report.items.filter((i) => i.bucket === "stale");

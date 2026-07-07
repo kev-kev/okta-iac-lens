@@ -22,6 +22,11 @@ current milestone.
 - **Coverage overlay** (M5) — the viewer badges every card and assignment edge as managed /
   not-in-Terraform / Okta-managed, with a coverage %, per-kind breakdown, and prioritized
   **recommended steps** for closing the gap — the same guidance the `coverage` CLI prints.
+- **Enterprise scale** (M6) — above a size threshold the viewer goes **query-first**: search +
+  cohort landing + per-kind inventory, where every canvas render is a **bounded focus view**
+  (one resource and its direct neighbors) with **hub truncation** — never the whole graph. The
+  view definition, not the renderer, is what stays bounded, so legibility holds at 5k apps /
+  10k groups / 60k assignments. Below the threshold, the full M4/M5 canvas renders unchanged.
 
 ### Access-path viewer
 
@@ -39,6 +44,15 @@ A resource created outside Terraform (here, a click-ops group and its app assign
 **not in Terraform** on the card and its `grants` edge, the coverage panel drops below 100%, and
 the recommended steps say exactly how to bring it under IaC (`coverage --imports` → `terraform
 plan`). Run `coverage --viz <path>` to produce a graph the viewer can open.
+
+### Scale: bounded focus view
+
+![okta-iac-lens focus view at enterprise scale](docs/scale.png)
+
+A 15,000-node tenant, kept legible. Instead of rendering the whole graph, the viewer focuses one
+resource (here **Group 0**) and shows only its direct neighbors; a hub's fan-out is truncated to
+the top edges plus a **"+793 more"** aggregate that opens the browsable list. Click any neighbor
+to re-focus and walk the graph one bounded hop at a time. No canvas render depends on org size.
 
 ## Commands
 

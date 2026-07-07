@@ -1,15 +1,52 @@
-import { useMemo } from "react";
-import { ReactFlow, Background, Controls, Panel } from "@xyflow/react";
-import type { Edge as RFEdge } from "@xyflow/react";
+import { useEffect, useMemo } from "react";
+import { ReactFlow, Background, Controls, Panel, useReactFlow } from "@xyflow/react";
+import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { EdgeKind } from "../../core/model.js";
+import type { EdgeKind, NodeKind } from "../../core/model.js";
 import type { CardModel } from "./derive-cards.js";
 import type { CoverageBadges } from "./coverage-badges.js";
-import { layoutGraph } from "./layout.js";
+import type { AggregateNode } from "./build-focus-view.js";
+import { COMPACT_SPACING, DEFAULT_SPACING, layoutGraph, NODE_HEIGHT } from "./layout.js";
+import type { NodePosition } from "./layout.js";
+import { aggregateSide } from "./build-focus-view.js";
 import { edgeId } from "./highlight.js";
 import type { HighlightSet } from "./highlight.js";
 import { Legend, nodeTypes, ViewerContext } from "./nodes.js";
-import type { OktaFlowNode } from "./nodes.js";
+
+/**
+ * Rendered inside <ReactFlow> so it can use the instance. On focus change: fitView frames the
+ * graph horizontally ("balanced with graph length"), then we override the vertical position so
+ * the focused card sits at viewport middle. Keyed to focusNodeId + node count so it re-runs when
+ * the view changes.
+ */
+function CenterOnFocus({
+  focusNodeId,
+  positions,
+  nodeCount,
+}: {
+  focusNodeId: string | null | undefined;
+  positions: Map<string, NodePosition>;
+  nodeCount: number;
+}) {
+  const rf = useReactFlow();
+  useEffect(() => {
+    // Defer to the next frame so fitView has committed its transform before we read it —
+    // reading synchronously right after fitView gave stale numbers (the "works sometimes" bug).
+    const raf = requestAnimationFrame(() => {
+      rf.fitView({ padding: 0.2, maxZoom: 1 });
+      const pos = focusNodeId ? positions.get(focusNodeId) : undefined;
+      if (pos) {
+        // Keep fitView's horizontal center + zoom; pin the focus card vertically centered.
+        const vp = rf.getViewport();
+        const centerXFlow = (window.innerWidth / 2 - vp.x) / vp.zoom;
+        rf.setCenter(centerXFlow, pos.y + NODE_HEIGHT / 2, { zoom: vp.zoom, duration: 200 });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNodeId, nodeCount]);
+  return null;
+}
 
 /** Only spine edges remain in the flow graph now (policies are card attributes). */
 const EDGE_COLOR: Partial<Record<EdgeKind, string>> = {
@@ -27,9 +64,19 @@ export interface GraphViewProps {
   selectedPolicyId?: string | null;
   /** M5 coverage overlay maps, or null when no overlay is active. */
   badges?: CoverageBadges | null;
+  /** M6 focus-view aggregates ("+N more" for truncated hubs), laid out by dagre beside hosts. */
+  aggregates?: AggregateNode[];
+  /** M6 focus mode: the focused node id — its card gets the FOCUS ring, and drives centering + compact layout. */
+  focusNodeId?: string | null;
   showLabels?: boolean;
   onSelectGroup?: (groupId: string) => void;
   onSelectPolicy?: (policyId: string) => void;
+  /** M6 focus mode: clicking a non-focused node re-focuses on it (overrides onSelectGroup when set). */
+  onFocusNode?: (nodeId: string) => void;
+  /** M6 focus mode: clicking the ALREADY-focused node clears focus (back to the list). */
+  onDefocus?: () => void;
+  /** M6 focus mode: clicking an aggregate opens the host's truncated-neighbor list (of that kind). */
+  onExpandAggregate?: (hostId: string, kind: NodeKind) => void;
   onClear?: () => void;
 }
 
@@ -38,17 +85,26 @@ export function GraphView({
   highlight,
   selectedPolicyId,
   badges,
+  aggregates,
+  focusNodeId,
   showLabels = true,
   onSelectGroup,
   onSelectPolicy,
+  onFocusNode,
+  onDefocus,
+  onExpandAggregate,
   onClear,
 }: GraphViewProps) {
   const { flow, sessionPolicyByGroup, authPolicyByApp } = cards;
-  const positions = useMemo(() => layoutGraph(flow), [flow]);
+  // Focus views (focusNodeId set) pack tighter so a rank of neighbors fits the viewport.
+  const spacing = focusNodeId != null ? COMPACT_SPACING : DEFAULT_SPACING;
+  const positions = useMemo(
+    () => layoutGraph(flow, aggregates ?? [], spacing),
+    [flow, aggregates, spacing],
+  );
 
-  const nodes: OktaFlowNode[] = useMemo(
-    () =>
-      flow.nodes.map((n) => {
+  const nodes: RFNode[] = useMemo(() => {
+    const real: RFNode[] = flow.nodes.map((n) => {
         const policy =
           n.kind === "Group"
             ? sessionPolicyByGroup.get(n.id)
@@ -68,15 +124,38 @@ export function GraphView({
             policyActive: policy != null && policy.id === selectedPolicyId,
             bucket: badges?.bucketByNodeId.get(n.id),
             policyBucket: policy ? badges?.bucketByPolicyId.get(policy.id) : undefined,
+            isFocus: n.id === focusNodeId,
           },
         };
-      }),
-    [flow, positions, highlight, selectedPolicyId, badges, sessionPolicyByGroup, authPolicyByApp],
-  );
+      });
+    // Aggregate pseudo-nodes ("+N more") — positioned by dagre like everything else.
+    const aggs: RFNode[] = (aggregates ?? []).flatMap((agg) => {
+      const pos = positions.get(agg.id);
+      if (!pos) return [];
+      return [
+        {
+          id: agg.id,
+          type: "aggregate" as const,
+          position: pos,
+          data: { hiddenCount: agg.hiddenCount, hostId: agg.hostId, kind: agg.kind },
+        },
+      ];
+    });
+    return [...real, ...aggs];
+  }, [
+    flow,
+    positions,
+    highlight,
+    selectedPolicyId,
+    badges,
+    aggregates,
+    focusNodeId,
+    sessionPolicyByGroup,
+    authPolicyByApp,
+  ]);
 
-  const edges: RFEdge[] = useMemo(
-    () =>
-      flow.edges.map((e) => {
+  const edges: RFEdge[] = useMemo(() => {
+    const real: RFEdge[] = flow.edges.map((e) => {
         const id = edgeId(e);
         const active = highlight ? highlight.edgeIds.has(id) : undefined;
         const dim = active === false;
@@ -88,6 +167,8 @@ export function GraphView({
           id,
           source: e.from,
           target: e.to,
+          sourceHandle: "s-right", // flow runs left→right: leave right, enter left
+          targetHandle: "t-left",
           label,
           animated: active === true,
           style: {
@@ -101,9 +182,26 @@ export function GraphView({
           labelBgPadding: [6, 3] as [number, number],
           labelBgBorderRadius: 6,
         };
-      }),
-    [flow, highlight, showLabels, badges],
-  );
+      });
+    const kindById = new Map<string, NodeKind>(flow.nodes.map((n) => [n.id, n.kind]));
+    const aggEdges: RFEdge[] = (aggregates ?? []).flatMap((agg) => {
+      if (!positions.get(agg.hostId)) return [];
+      const hostKind = kindById.get(agg.hostId);
+      const left = hostKind ? aggregateSide(hostKind, agg.kind) === "left" : false;
+      // Draw upstream pills host(left handle)→agg(right handle); downstream host(right)→agg(left).
+      return [
+        {
+          id: `e:${agg.id}`,
+          source: agg.hostId,
+          target: agg.id,
+          sourceHandle: left ? "s-left" : "s-right",
+          targetHandle: left ? "t-right" : "t-left",
+          style: { stroke: "#64748b", strokeDasharray: "2 3" },
+        },
+      ];
+    });
+    return [...real, ...aggEdges];
+  }, [flow, highlight, showLabels, badges, aggregates, positions]);
 
   return (
     <div className="graph-canvas">
@@ -113,13 +211,29 @@ export function GraphView({
           edges={edges}
           nodeTypes={nodeTypes}
           fitView
+          fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
           panOnScroll
           nodesConnectable={false}
           onNodeClick={(_event, node) => {
-            if (node.data.kind === "Group") onSelectGroup?.(node.id);
+            if (node.type === "aggregate") {
+              onExpandAggregate?.(node.data.hostId as string, node.data.kind as NodeKind);
+            } else if (onFocusNode) {
+              // focus mode: re-clicking the focused node clears it, otherwise re-focus.
+              if (node.id === focusNodeId) onDefocus?.();
+              else onFocusNode(node.id);
+            } else if (node.data.kind === "Group") {
+              onSelectGroup?.(node.id); // full-canvas mode: groups trace
+            }
           }}
           onPaneClick={() => onClear?.()}
         >
+          {onFocusNode && (
+            <CenterOnFocus
+              focusNodeId={focusNodeId}
+              positions={positions}
+              nodeCount={flow.nodes.length}
+            />
+          )}
           <Background />
           <Controls />
           <Panel position="top-left">

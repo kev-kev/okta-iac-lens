@@ -24,6 +24,8 @@ export interface OktaNodeData extends Record<string, unknown> {
   /** M5 coverage overlay: this card's bucket, and its policy badge's bucket (undefined = no overlay). */
   bucket?: CoverageBucket;
   policyBucket?: CoverageBucket;
+  /** M6 focus mode: this card is the current focus (gets the FOCUS ring). */
+  isFocus?: boolean;
 }
 
 /** Short tag shown on a card/badge when the coverage overlay is on. Managed is left implicit. */
@@ -92,13 +94,19 @@ function PolicyBadge({
 export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
   const dimmed = data.active === false;
   const bucketClass = data.bucket ? ` bucket-${data.bucket}` : "";
+  const focusClass = data.isFocus ? " is-focus" : "";
   const tag = data.bucket ? BUCKET_TAG[data.bucket] : undefined;
   return (
-    <div className={`okta-node kind-${data.kind}${dimmed ? " is-dimmed" : ""}${bucketClass}`}>
-      {/* Handles only anchor edges (nodesConnectable off); hidden via CSS. dagre lays out
-          left->right, so incoming edges enter left, outgoing leave right. */}
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+    <div
+      className={`okta-node kind-${data.kind}${dimmed ? " is-dimmed" : ""}${bucketClass}${focusClass}`}
+    >
+      {data.isFocus && <div className="focus-tag">FOCUS</div>}
+      {/* Handles only anchor edges (nodesConnectable off); hidden via CSS. Named on both sides so
+          flow edges enter left/leave right, and "+N more" pills anchor on the correct side. */}
+      <Handle id="t-left" type="target" position={Position.Left} />
+      <Handle id="s-right" type="source" position={Position.Right} />
+      <Handle id="s-left" type="source" position={Position.Left} />
+      <Handle id="t-right" type="target" position={Position.Right} />
       {tag && <div className={`coverage-tag bucket-${data.bucket}`}>{tag}</div>}
       <div className="okta-node-kind">{KIND_LABEL[data.kind]}</div>
       <div className="okta-node-label">{data.label}</div>
@@ -124,7 +132,34 @@ export function OktaNode({ data }: NodeProps<OktaFlowNode>) {
   );
 }
 
-export const nodeTypes = { okta: OktaNode };
+/** A focus-view aggregate: "+N more <kind>" standing in for the focus's truncated neighbors. */
+export interface AggregateNodeData extends Record<string, unknown> {
+  hiddenCount: number;
+  hostId: string;
+  kind: NodeKind;
+}
+export type AggregateFlowNode = Node<AggregateNodeData, "aggregate">;
+
+/** Plural, lowercase kind noun for the "+N more apps" label. */
+const KIND_PLURAL: Record<NodeKind, string> = {
+  Group: "groups",
+  App: "apps",
+  GroupRule: "rules",
+  GlobalSessionPolicy: "session policies",
+  AppAuthPolicy: "app policies",
+};
+
+export function AggregateNodeCard({ data }: NodeProps<AggregateFlowNode>) {
+  return (
+    <div className="aggregate-node" title="Browse all connected resources">
+      <Handle id="t-left" type="target" position={Position.Left} />
+      <Handle id="t-right" type="target" position={Position.Right} />
+      +{data.hiddenCount} more {KIND_PLURAL[data.kind]}
+    </div>
+  );
+}
+
+export const nodeTypes = { okta: OktaNode, aggregate: AggregateNodeCard };
 
 /** Legend: the resource flow, plus the two policy layers as card attributes (kept distinct). */
 export function Legend() {

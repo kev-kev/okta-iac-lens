@@ -9,11 +9,11 @@
 import { writeFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import { buildGraph } from "./core/build-graph.js";
-import { summarize, trace } from "./core/access-paths.js";
-import { computeCoverage } from "./analysis/coverage.js";
+import { summarize, trace, traceApp } from "./core/access-paths.js";
+import { computeCoverage, slimCoverage } from "./analysis/coverage.js";
 import { generateImportBlocks } from "./analysis/import-blocks.js";
 import { loadDotEnv, loadLiveResources, loadStateResources } from "./inputs/load-resources.js";
-import { renderCoverage, renderSummary, renderTrace } from "./render/cli.js";
+import { renderAppTrace, renderCoverage, renderSummary, renderTrace } from "./render/cli.js";
 import type { OutputFormat } from "./render/cli.js";
 import { makeEnvelope } from "./render/envelope.js";
 
@@ -64,16 +64,24 @@ program
 
 program
   .command("trace")
-  .description("Trace what a group grants and which policies gate it.")
-  .requiredOption("--group <nameOrId>", "group display name or id")
+  .description("Trace access: what a group grants (--group), or what reaches an app (--app).")
+  .option("--group <nameOrId>", "group display name or id")
+  .option("--app <nameOrId>", "app display name or id (reverse trace: which groups reach it)")
   .addOption(sourceOption())
   .option("--state <path>", "path to `terraform show -json` output (tfstate source)")
   .option("--json", "output JSON instead of text")
-  .action(async (opts: SourceOpts & { group: string; json?: boolean }) => {
+  .action(async (opts: SourceOpts & { group?: string; app?: string; json?: boolean }) => {
     try {
+      if ((opts.group == null) === (opts.app == null)) {
+        throw new Error("trace requires exactly one of --group <nameOrId> or --app <nameOrId>.");
+      }
       const graph = await loadGraph(opts);
       const format: OutputFormat = opts.json ? "json" : "text";
-      console.log(renderTrace(trace(graph, opts.group), format));
+      console.log(
+        opts.app != null
+          ? renderAppTrace(traceApp(graph, opts.app), format)
+          : renderTrace(trace(graph, opts.group as string), format),
+      );
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -105,8 +113,13 @@ program
         console.error(`Wrote ${report.overall.unmanaged} import block(s) to ${opts.imports}`);
       }
       if (opts.viz) {
-        // Embed the live graph (already fetched — no extra API calls) plus the coverage overlay.
-        const envelope = makeEnvelope(buildGraph(live), "okta", new Date().toISOString(), report);
+        // Embed the live graph (already fetched — no extra API calls) plus the slimmed overlay.
+        const envelope = makeEnvelope(
+          buildGraph(live),
+          "okta",
+          new Date().toISOString(),
+          slimCoverage(report),
+        );
         await writeFile(opts.viz, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
         console.error(`Wrote coverage viz (${report.items.length} classified) to ${opts.viz}`);
       }

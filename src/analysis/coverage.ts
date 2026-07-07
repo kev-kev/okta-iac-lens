@@ -25,7 +25,9 @@ export type ResourceKind = ParsedResource["kind"];
  */
 export type CoverageBucket = "managed" | "unmanaged" | "stale" | "excluded";
 
-export interface CoverageItem {
+/** Everything about a classified resource EXCEPT the embedded record — the fields the viewer,
+ * badges, and `recommend()` read. The slim envelope carries these. */
+export interface CoverageItemBase {
   kind: ResourceKind;
   /** Within-kind identity: `id` for most kinds, `${appId}/${groupId}` for assignments. */
   key: string;
@@ -34,7 +36,11 @@ export interface CoverageItem {
   bucket: CoverageBucket;
   /** Why a live-only record was excluded. Set iff `bucket === "excluded"`. */
   reason?: string;
-  /** Underlying record: the live record for managed/unmanaged/excluded, the state record for stale. */
+}
+
+export interface CoverageItem extends CoverageItemBase {
+  /** Underlying record: the live record for managed/unmanaged/excluded, the state record for stale.
+   * Used only by import-block generation (CLI); the viewer never needs it (see `slimCoverage`). */
   resource: ParsedResource;
 }
 
@@ -55,6 +61,24 @@ export interface CoverageReport {
   overall: Omit<KindCoverage, "kind">;
   /** Every classified resource, sorted by (kind, bucket, key) for deterministic output. */
   items: CoverageItem[];
+}
+
+/** The report minus per-item `resource` — the shape embedded in the viewer envelope. A full
+ * `CoverageReport` is structurally assignable to this, so functions typed to it accept both. */
+export interface SlimCoverageReport {
+  perKind: KindCoverage[];
+  overall: Omit<KindCoverage, "kind">;
+  items: CoverageItemBase[];
+}
+
+/** Drop per-item `resource` for the viewer envelope — the viewer never reads it, and it's the
+ * bulk of the report (~2.6× the graph). PURE. */
+export function slimCoverage(report: CoverageReport): SlimCoverageReport {
+  return {
+    perKind: report.perKind,
+    overall: report.overall,
+    items: report.items.map(({ resource: _resource, ...base }) => base),
+  };
 }
 
 /** Stable display/sort order for kinds. */

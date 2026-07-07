@@ -9,7 +9,7 @@
  * anything on the canvas (stale is panel-only, by design).
  */
 
-import type { CoverageBucket, CoverageReport } from "../../analysis/coverage.js";
+import type { CoverageBucket, SlimCoverageReport } from "../../analysis/coverage.js";
 
 export interface CoverageBadges {
   /** node id -> bucket, for Group/App/GroupRule cards. */
@@ -20,7 +20,7 @@ export interface CoverageBadges {
   bucketByPolicyId: Map<string, CoverageBucket>;
 }
 
-export function coverageBadges(report: CoverageReport): CoverageBadges {
+export function coverageBadges(report: SlimCoverageReport): CoverageBadges {
   const bucketByNodeId = new Map<string, CoverageBucket>();
   const bucketByEdgeId = new Map<string, CoverageBucket>();
   const bucketByPolicyId = new Map<string, CoverageBucket>();
