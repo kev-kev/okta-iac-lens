@@ -3,7 +3,8 @@
 Local-first tool that reads Terraform-managed Okta config, **visualizes access paths**, and
 **measures how much of the org is under IaC**. Generic Terraform visualizers draw resource
 dependency graphs; this one understands Okta access semantics — who can reach what, and under
-which policies.
+which policies — and stays legible at enterprise scale (thousands of apps/groups) by making every
+canvas render a **bounded focus view**, never the whole graph.
 
 See [`CLAUDE.md`](CLAUDE.md) for durable design context and [`PLAN.md`](PLAN.md) for the
 current milestone.
