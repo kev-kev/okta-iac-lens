@@ -26,7 +26,7 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 
 ### Phase B — ground truth + wrap (pending)
 
-- [ ] **Live acceptance (the real oracle):** `trace --user <known-test-user> --source okta` against the free Integrator tenant → the computed app list + policies + provenance **match the Okta admin console** for that user. `--app` explains one app (positive; and, for an app they lack, the honest no-access view). Read-only, Opus per the standing note. *(Scope question already resolved incidentally: a live `/api/v1/users/{login}` lookup returned 404 not 403 — the Read-Only Admin SSWS token can read users.)*
+- [x] **Live acceptance (the real oracle):** PASSED against the free Integrator tenant. `trace --user kevin-personal@kevctech.com --source okta`: in Everyone only → 0 apps (matches console); after adding to Engineering → Datadog (Strict-Auth) + GitHub (org default) via Engineering, correct provenance (Everyone=direct, Engineering=rule eng-rule `user.department=="Engineering"`), distinct per-group session gates (Default Policy vs Default-MFA). Matches the admin console. Scope resolved incidentally: live `/users/{login}` returned 404 not 403 — the Read-Only Admin SSWS token can read users. *(Known boundary surfaced: apps assigned DIRECTLY to a user, not via a group, are not traced — group-based by design; v2 candidate.)*
 - [ ] Branch `/security-review`; PR; merge to `main`.
 - [ ] (Optional) README screenshot/paste of a real user trace once ground-truth passes.
 
