@@ -54,8 +54,8 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 
 - [ ] Script writes a synthetic-scale envelope to `generated/` (gitignored); load in browser: responsive search, bounded focus views, visible hub truncation, inventory tabs smooth. (No live data involved.)
 - [ ] Live regression: the real Integrator tenant (small) still lands on the full canvas exactly as M5 shipped it. (Live read — Opus per the standing note.)
-- [ ] Screenshot a focus view at scale → README.
-- [ ] Branch `/security-review`; PR.
+- [x] Screenshot a focus view at scale → README (`docs/scale.png`; 15k-node bounded focus).
+- [x] Branch `/security-review`; PR (#5 merged). Security review **clean** — no HIGH/MEDIUM findings; no new XSS/exec/exposure surface (slimmed envelope reduces embedded data; viewer renders via JSX auto-escape; sole FS write is a trusted CLI flag).
 
 ## Deferred (do NOT build in M6)
 
