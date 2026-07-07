@@ -27,7 +27,7 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 ### Phase B — ground truth + wrap (pending)
 
 - [x] **Live acceptance (the real oracle):** PASSED against the free Integrator tenant. `trace --user kevin-personal@kevctech.com --source okta`: in Everyone only → 0 apps (matches console); after adding to Engineering → Datadog (Strict-Auth) + GitHub (org default) via Engineering, correct provenance (Everyone=direct, Engineering=rule eng-rule `user.department=="Engineering"`), distinct per-group session gates (Default Policy vs Default-MFA). Matches the admin console. Scope resolved incidentally: live `/users/{login}` returned 404 not 403 — the Read-Only Admin SSWS token can read users. *(Known boundary surfaced: apps assigned DIRECTLY to a user, not via a group, are not traced — group-based by design; v2 candidate.)*
-- [ ] Branch `/security-review`; PR; merge to `main`.
+- [x] Branch `/security-review` — **clean**, no HIGH/MEDIUM findings: new user endpoints encode the login (`encodeURIComponent` + `new URL`, no SSRF/traversal), token never logged, PII never persisted (no user fixture), trusted-API JSON only, no write path added. PR; merge to `main`.
 - [ ] (Optional) README screenshot/paste of a real user trace once ground-truth passes.
 
 ## Deferred (do NOT build in M7)
