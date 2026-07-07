@@ -1,78 +1,51 @@
 # PLAN.md — current milestone
 
-Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 6 ships, rewrite this for M7.
+Read alongside `CLAUDE.md` (durable context). This file is the current, disposable work plan. When Milestone 7 ships, rewrite this for M8.
 
-> **Shipped:** **M1** static trace (`terraform show -json` → `ParsedResource[]` → `OktaGraph` → `trace`/`summary`). **M2** live read-only reader emitting the same `ParsedResource[]`; graph equivalence + admin-console ground truth passed. **M3** `coverage` reconciliation (presence-first classification over the shared seam) + import blocks confirmed against okta/okta v4.20.0; live click-ops ground truth passed. **M4** static web viewer (Vite + React Flow + dagre; policies as card attributes; group-trace + policy-sharing); live ground truth; CI; security review clean. **M5** coverage overlay + recommended steps (managed/unmanaged/excluded badges on cards/edges/policy-badges; pure `recommend()` in CLI + viewer; coverage rides the same envelope as an optional additive field); live click-ops ground truth in pixels; security review clean.
+> **Shipped:** **M1** static trace (`terraform show -json` → `ParsedResource[]` → `OktaGraph` → `trace`/`summary`). **M2** live read-only reader emitting the same `ParsedResource[]`; graph equivalence + admin-console ground truth passed. **M3** `coverage` reconciliation (presence-first classification over the shared seam) + import blocks confirmed against okta/okta v4.20.0; live click-ops ground truth passed. **M4** static web viewer (Vite + React Flow + dagre; policies as card attributes; group-trace + policy-sharing); live ground truth; CI; security review clean. **M5** coverage overlay + recommended steps (managed/unmanaged/excluded badges; pure `recommend()` in CLI + viewer). **M6** scale the viewer to enterprise tenants (query-first landing + cohort overview + bounded depth-1 focus views + hub truncation; slim envelope; synthetic-scale invariants tested); screenshot at 15k nodes; security review clean.
 
-## Milestone 6: scale the viewer to enterprise tenants
+## Milestone 7: user-level access trace — `trace --user <email>`
 
-> **Design revision 2 (2026-07-06, from hands-on review at synthetic scale; decisions confirmed: viewport-adaptive cap, fixed cohort defaults, both parts land in M6).** The first build exposed two model errors the screenshot made undeniable:
->
-> 1. **Focus view → pure DEPTH-1 ego view.** Depth-2 expansion answered the wrong question: focusing a group pulled in its apps' ~48 *sibling groups* — two-hop noise that produced the spaghetti and pushed the actual apps off-screen. New model: the focus centered, **direct neighbors only** (group: populating rules left, granted apps right; app: granting groups left; rule: populated groups right). Per-side cap is **viewport-adaptive** (computed from canvas height, clamped ~6–14); the remainder is ONE **"+X more" pill at the bottom of the column** → the existing virtualized panel. Re-focusing by clicking a neighbor is how you walk the graph — no static depth-2, ever. This DELETES the depth-dimming (`depthById` highlight) added earlier — in a depth-1 view everything visible is relevant. Also fixes the centering race (viewport read before `fitView` settles → defer a frame).
-> 2. **Landing → aggregated cohort overview, not a flat list.** The M6-scoping rejection of clustered overviews said "no natural hierarchy" — correct, but cohorts don't need hierarchy; we already compute three meaningful dimensions. New landing (above threshold): **three lanes matching the flow (Rules → Groups → Apps)** of cohort cards with counts — fixed smart defaults: Groups by **connectivity band** (hubs surfaced), Apps by **auth policy** (top policies + "other"), Rules as one cohort — joined by **ribbons carrying aggregated assignment counts** (one edge = "12,400 assignments"). 5–15 meta-nodes: legible by construction. Drill: cohort click → scoped member list (existing virtualized list, arrived at with intent) → resource click → depth-1 focus. Flat inventory stays reachable ("Browse all"); search stays in the header; coverage/recommendations panel stays on the landing. New pure module `cohorts.ts` (band/policy grouping + ribbon counts) tested like everything else; the CLAUDE.md "rejected semantic-zoom" note gets a qualifier (cohort aggregation ≠ hierarchy clustering).
->
-> Where the original steps below conflict with this note, the note wins. Oracle deltas: depth-1 focus rows replace the depth-2/eviction rows; cohorts rows added.
+**Goal:** answer the single most common enterprise IT question — *"what is user U provisioned to, and how?"* (and its `--app` narrowing, *"why does / doesn't U reach app A?"*) — without violating the users-out-of-scope scale decision.
 
-**Goal:** the viewer stays legible and responsive at enterprise scale (target: **5k apps / 10k groups / 60k assignments**) without giving up the local-first static file. Above a size threshold the viewer becomes **query-first**: a scale-independent landing surface (search + inventory lists + coverage) where every canvas render is a **bounded focus view**. At or below the threshold (≤ ~300 nodes), the current whole-graph M4/M5 canvas renders exactly as today. (Design comparison run 2026-07-04 at max effort; decisions confirmed: A+C hybrid, include reverse trace, this scale target, auto-threshold. Durable principle in CLAUDE.md → "Scale strategy".)
+**The load-bearing design decision:** a **User is a trace INPUT, not a graph node.** One user is looked up live (read-only): email → user → group-id list. That list is fed into the existing group→app→policy machinery. This scales (one user per lookup, no user nodes), keeps `src/core/` pure and fixture-testable (membership is just an id array — no PII fixture), and adds only two read-only endpoints as I/O. Confirmed anticipated by the M7 backlog note.
 
-**The load-bearing design decision:** change the **definition of a view**, not the renderer. No canvas render may depend on org size — every focus view is bounded by construction (visible budget ~150 nodes; hub truncation). Rejected alternatives, recorded: semantic-zoom/clustered overview (Okta data has no natural hierarchy to cluster on; converges to needing focus views at the leaves; highest cost) and renderer swaps (canvas/WebGL solves paint, not legibility). All new logic is PURE and fixture-testable: `traceApp()` (reverse trace) in core, `buildFocusView()` / search index / adjacency indexes in viewer pure modules.
+**Semantic rails (load-bearing — the tool's credibility):**
+- Wording is **"provisioned to / gated by," never "can access."** A static read can't evaluate runtime policy conditions (MFA, device, network); the output says so on every trace.
+- **Provenance is honest, never evaluated.** A group is labeled rule-populated iff a `populates` edge targets it; the rule expression is surfaced verbatim for a human to read. We never claim the user entered via that rule (Okta's `/users/{id}/groups` doesn't expose per-user source; no OEL evaluation, ever).
+- **"org default" ≠ unprotected** — preserved from M1; a null app auth policy renders as "org default app sign-on policy."
+- **PII:** user email/id are PII. No user fixture is ever committed; pure tests synthesize id arrays. `.gitignore` already denies real exports; the token is never logged.
 
-**Scope rails:**
+### Phase A — offline ✅ (shipped)
 
-- **Local-first stays.** One static envelope file; in-memory indexes built once at load. No backend, no streaming, no chunked files in M6 (escape hatches recorded in CLAUDE.md for beyond-target scale).
-- **Hub truncation is non-negotiable:** a group granting N ≫ k apps renders top-k edges + ONE aggregate pseudo-node ("…and N−k more — browse list") that opens a panel list. Same for apps with many groups. k ≈ 12, pinned at checkpoint.
-- **Policy semantics unchanged:** two layers distinct, "org default" ≠ unprotected, policies stay card attributes.
-- **Zero forked logic:** the viewer imports pure core/analysis; new pure functions live in core (`traceApp`) or viewer pure modules, tested against fixtures.
-- The synthetic-scale data is generated IN TESTS (seeded, deterministic) — never a committed multi-MB fixture, never from a real tenant.
+- [x] **Pure core** (`src/core/access-paths.ts`): factored the edge-walks (`appsGrantedByGroup`, `groupsGrantingApp`, `sessionPolicyForGroup`, `authPolicyForApp`, `rulesPopulatingGroup`) so `trace`/`traceApp`/`traceUser` share one traversal; added `traceUser(graph, {user, groupIds})` → `UserTraceResult` and `explainUserApp(graph, result, appNameOrId)` → `UserAppExplain` (positive path + honest no-access explainer). Behavior-preserving: all M1–M6 tests stay green.
+- [x] **Live input** (`src/inputs/okta-api.ts`): `RawUser`, separate `OktaUserReader` interface (`getUserByLogin`, `listUserGroupIds`) on `HttpOktaReader`, reusing the SSWS/pagination machinery. `loadUserMembership(login, reader?, env?)` in `load-resources.ts` — the thin PII boundary, credential-guarded before any network call.
+- [x] **CLI** (`src/cli.ts`): `trace --user <email>` (+ `--app` filter); guards (`--user` needs `--source okta`; not combinable with `--group`).
+- [x] **Render** (`src/render/cli.ts`): `renderUserTrace` + `renderUserAppExplain`, mirroring the existing renderers; runtime caveat on every statement.
+- [x] **Tests:** `test/access-paths-user.test.ts` (pure `traceUser` oracle, membership synthesized) + `test/cli-user.test.ts` (loader credential guard + injected-reader mapping + both renderers, positive & negative). `npm test` 116 green; `npm run build` + `npm run web:build` clean.
 
-### Phase A — offline (pause at the checkpoint)
+### Phase B — ground truth + wrap (pending)
 
-1. **Pin the contracts.** (a) Envelope slimming: the embedded coverage's `items[].resource` (full ParsedResource per item) exists for CLI import-block generation, which the viewer never does; `recommend()` needs only `overall`/`perKind`, panels need `kind/key/name/bucket/reason`. Decide the slimmed shape (projection type vs optional field) + compat handling (M5 "fat" envelopes must still load). (b) `traceApp()` signature (mirror of `trace()`: groups granting the app + rules populating those groups + its auth policy). (c) Budget + k values; auto-threshold value (~300). (d) Virtualized list: tiny dep (version-check per CLAUDE.md) vs hand-rolled.
+- [ ] **Live acceptance (the real oracle):** `trace --user <known-test-user> --source okta` against the free Integrator tenant → the computed app list + policies + provenance **match the Okta admin console** for that user. `--app` explains one app (positive; and, for an app they lack, the honest no-access view). Read-only, Opus per the standing note. *(Scope question already resolved incidentally: a live `/api/v1/users/{login}` lookup returned 404 not 403 — the Read-Only Admin SSWS token can read users.)*
+- [ ] Branch `/security-review`; PR; merge to `main`.
+- [ ] (Optional) README screenshot/paste of a real user trace once ground-truth passes.
 
---- CHECKPOINT: review slimmed-envelope shape, traceApp contract, and budget/threshold constants before building. ---
+## Deferred (do NOT build in M7)
 
-2. **Core:** pure `traceApp(graph, appNameOrId)` + reverse adjacency; CLI surface `trace --app <nameOrId>` (cheap, same renderer shape).
-3. **Viewer pure modules:** `indexes.ts` (id→node, group→apps, app→groups, name-search index — built once per load); `build-focus-view.ts` (foci + budget → bounded flow graph with aggregate pseudo-nodes; eviction by distance-from-focus, unmanaged-ness boosts retention).
-4. **Landing surface (the C half):** above-threshold files land on search + per-kind virtualized inventory tabs (filter by coverage bucket/name) + the existing CoveragePanel. Below-threshold: today's full canvas, unchanged.
-5. **Focus canvas (the A half):** search/row-click → focus view rendered through the existing GraphView (cards, badges, overlay, dagre — all reused); click neighbor = re-focus; shift-click = add neighborhood under budget; aggregate pseudo-node click = panel list.
-6. **Tests + build green — show output.**
-
-### Test oracle for Phase A
-
-- **Synthetic-scale generator** (pure, seeded): 5k apps / 10k groups / 60k assignments / heavy-tail hubs (incl. one group→800 apps, one app→400 groups).
-- **buildFocusView:** NEVER exceeds budget for any focus in the synthetic org (property-style row); hub focus yields exactly k edges + 1 aggregate node reporting N−k; unmanaged neighbors survive eviction over managed ones at equal distance.
-- **traceApp:** on the fixture tenant, `traceApp("GitHub")` → groups {Engineering, Contractors}, rule eng-rule (via Engineering), auth policy null/org-default; `traceApp("Datadog")` → {Engineering}, Strict-Auth. Mirrors the M1 trace oracle.
-- **indexes:** build over the synthetic org completes within a generous smoke bound; lookups match brute-force scans on sampled ids.
-- **Threshold:** fixture envelope (≤300 nodes) → full-canvas mode; synthetic envelope → query-first mode. Slimmed-envelope compat: M5 fat envelopes still load (compat row), slim envelopes drive panels + recommend() identically.
-- **web:build** green; whole-graph path regression-covered by existing M4/M5 tests.
-
-### Phase A done when
-
-- Contracts pinned + checkpoint passed; `traceApp` + CLI flag, `indexes`, `build-focus-view`, the landing surface, and the focus canvas exist; every oracle row passes; `npm test` + `npm run web:build` green; small-tenant whole-graph path unchanged; no live call made.
-
-### Phase B — ground truth + demo
-
-- [ ] Script writes a synthetic-scale envelope to `generated/` (gitignored); load in browser: responsive search, bounded focus views, visible hub truncation, inventory tabs smooth. (No live data involved.)
-- [ ] Live regression: the real Integrator tenant (small) still lands on the full canvas exactly as M5 shipped it. (Live read — Opus per the standing note.)
-- [x] Screenshot a focus view at scale → README (`docs/scale.png`; 15k-node bounded focus).
-- [x] Branch `/security-review`; PR (#5 merged). Security review **clean** — no HIGH/MEDIUM findings; no new XSS/exec/exposure surface (slimmed envelope reduces embedded data; viewer renders via JSX auto-escape; sole FS write is a trusted CLI flag).
-
-## Deferred (do NOT build in M6)
-
-- Semantic-zoom/clustered overview; adjacency-matrix density mode (recorded alternatives — revisit only if org-shape-at-a-glance becomes a demanded task).
-- Chunked envelopes / SQLite-wasm (beyond-target scale escape hatches); any backend.
-- Click-ops attribution via System Log (`okta.logs.read` — separate backlog item, M7 candidate).
-- Plan-diff view; attribute-level drift; OEL evaluation.
+- **Negative case beyond the `--app` explainer** (full "nearest miss" enumeration across all apps).
+- Runtime policy-condition / OEL evaluation — we surface rule expressions verbatim, never evaluate.
+- Web-viewer surface for user trace (CLI-only in v1).
+- Bulk user analysis / drawing users as graph nodes (violates the users-as-input decision).
 - Any WRITE operation against Okta. Read-only, full stop.
 
-## Backlog — "The opinionated layer: what an enterprise IT engineer actually needs" (recorded 2026-07-05, M7 scoping input)
+## Backlog — "The opinionated layer" (M8 scoping input)
 
-From the mid-M6 product conversation. The honest principle: at enterprise scale, engineers don't browse graphs — they arrive with a question (a ticket, an audit, a change, a posture review). A node-link canvas earns its keep for exactly two jobs — **path explanation** ("why does X reach Y", the trace/focus views) and **blast radius** ("what depends on this thing I'm changing") — and everything else that matters is **ranked lists, tables, quadrants, and diffs that link INTO the canvas**. M6's query-first substrate is the right skeleton; what it lacks is opinionation (the Explorer sorts alphabetically; an engineer needs risk/reach order). Candidate features, ranked by value:
+At enterprise scale engineers arrive with a question (ticket, audit, change, posture review). The canvas earns its keep for **path explanation** and **blast radius**; everything else is **ranked lists, tables, quadrants, and diffs that link into the canvas**. Candidates, ranked (item 1, user trace, is now shipping as M7):
 
-1. **User-level trace (the headline; requires REOPENING the users-out-of-scope decision).** "Why does/doesn't user U reach app A" is the single most common enterprise question. Not a cardinality problem — you look up ONE user at a time: their group memberships (read-only `okta.users.read` + per-user groups API), which memberships came via which rule vs. direct assignment, then the existing group→app→policy machinery. Scales fine; needs a new read-only scope + model surface (User as a trace INPUT, not bulk graph nodes).
-2. **Risk-ranked landing page** (cheap — all data in hand): cross **reach** (groups-granting-an-app / apps-granted-by-a-group, computable from edges today) × **gate strength** (org-default vs. custom auth policy) × **IaC status** (unmanaged). "Widest reach, weakest gate, not in Terraform" sorts first; scatter/quadrant view + ranked inventory replacing alphabetical sort.
-3. **Blast-radius framing of the focus view** (near-free): same computation, ticket-ready words — "42 apps and 3 rules depend on this group."
-4. **Policy outlier views** — apps that look like their cohort but sit behind a weaker policy (table/heatmap; the parked adjacency-matrix fits here).
-5. **What-if**: plan-diff (deferred, still the next overlay) and persona/birthright simulation ("what does a new dept=X hire get?") — the real ask behind OEL evaluation, still deferred as brittle.
+1. ~~User-level trace~~ → **M7 (this milestone).**
+2. **Risk-ranked landing** (cheap — data in hand): reach (groups-per-app / apps-per-group) × gate strength (org-default vs custom auth policy) × IaC status (unmanaged). "Widest reach, weakest gate, not in Terraform" sorts first; quadrant + ranked inventory replacing alphabetical sort.
+3. **Blast-radius framing of the focus view** (near-free): "42 apps and 3 rules depend on this group."
+4. **Policy outlier views** — apps behind a weaker policy than their cohort (table/heatmap; the parked adjacency-matrix fits here).
+5. **What-if:** plan-diff (next overlay) and persona/birthright simulation ("what does a new dept=X hire get?") — still deferred as brittle (needs OEL).
 
-Rails if picked up: read-only always; users are per-lookup trace inputs, never bulk-fetched or drawn in bulk; ranking logic pure in `src/analysis/`, tested against fixtures like everything else.
+Rails if picked up: read-only always; users are per-lookup trace inputs, never bulk-fetched or drawn in bulk; ranking logic pure in `src/analysis/`, tested against fixtures.

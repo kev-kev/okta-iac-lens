@@ -81,6 +81,12 @@ export interface RawAppGroupAssignment {
   priority?: number;
 }
 
+/** Minimal view of `GET /api/v1/users/{idOrLogin}`. Only `id` + login are used; the rest is PII we don't read. */
+export interface RawUser {
+  id: string;
+  profile?: { login?: string; email?: string };
+}
+
 /**
  * Narrow read-only interface. `map-api.ts` and tests depend on this, not on
  * `HttpOktaReader` directly, so fixtures can implement it with zero network.
@@ -95,6 +101,18 @@ export interface OktaReader {
   listAppAuthPolicies(): Promise<RawPolicy[]>;
   /** `GET /api/v1/apps/{appId}/groups` — all groups currently assigned to this app. */
   listAppGroupAssignments(appId: string): Promise<RawAppGroupAssignment[]>;
+}
+
+/**
+ * User-lookup reads for the per-user trace. Deliberately SEPARATE from `OktaReader` (the
+ * whole-tenant snapshot): user trace looks up ONE user at a time, so snapshot fixtures don't
+ * implement these, and this stays a distinct, narrowly-scoped read surface. Read-only.
+ */
+export interface OktaUserReader {
+  /** `GET /api/v1/users/{idOrLogin}` — resolve an email/login to a user. */
+  getUserByLogin(login: string): Promise<RawUser>;
+  /** `GET /api/v1/users/{userId}/groups` — the group ids this user belongs to. */
+  listUserGroupIds(userId: string): Promise<string[]>;
 }
 
 export interface OktaReaderConfig {
@@ -145,7 +163,8 @@ export function readOktaConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Okt
   if (!orgUrl || !apiToken) {
     throw new Error(
       "Live Okta mode requires OKTA_ORG_URL and OKTA_API_TOKEN to be set (see .env.example). " +
-        "Both must be read-only credentials scoped to okta.groups.read, okta.apps.read, okta.policies.read.",
+        "Both must be read-only credentials scoped to okta.groups.read, okta.apps.read, " +
+        "okta.policies.read (plus okta.users.read for `trace --user`).",
     );
   }
   return { orgUrl, apiToken };
@@ -165,8 +184,20 @@ function parseNextLink(linkHeader: string | null): string | null {
  * Live, read-only HTTP client. Construction does NOT call the network — only
  * `list*` methods do, and only when invoked (Phase B).
  */
-export class HttpOktaReader implements OktaReader {
+export class HttpOktaReader implements OktaReader, OktaUserReader {
   constructor(private readonly config: OktaReaderConfig) {}
+
+  /** One read request. Shared header/error handling; returns the parsed Response for the caller. */
+  private async get(path: string): Promise<Response> {
+    const url = new URL(path, this.config.orgUrl).toString();
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `SSWS ${this.config.apiToken}`,
+        Accept: "application/json",
+      },
+    });
+    return res;
+  }
 
   private async getPaginated<T>(path: string): Promise<T[]> {
     const out: T[] = [];
@@ -186,6 +217,28 @@ export class HttpOktaReader implements OktaReader {
       url = parseNextLink(res.headers.get("link"));
     }
     return out;
+  }
+
+  async getUserByLogin(login: string): Promise<RawUser> {
+    // Okta accepts a login/email in the id path segment; encode it (emails contain no slashes
+    // but may contain '+', '@', etc.).
+    const res = await this.get(`/api/v1/users/${encodeURIComponent(login)}`);
+    if (res.status === 404) {
+      throw new Error(`User not found: "${login}"`);
+    }
+    if (!res.ok) {
+      throw new Error(
+        `Okta API request failed: GET /api/v1/users/${login} -> ${res.status} ${res.statusText}`,
+      );
+    }
+    return (await res.json()) as RawUser;
+  }
+
+  async listUserGroupIds(userId: string): Promise<string[]> {
+    const groups = await this.getPaginated<{ id: string }>(
+      `/api/v1/users/${encodeURIComponent(userId)}/groups`,
+    );
+    return groups.map((g) => g.id);
   }
 
   listGroups(): Promise<RawGroup[]> {

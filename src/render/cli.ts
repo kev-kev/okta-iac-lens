@@ -4,11 +4,32 @@
  * Presentation only — no traversal logic here.
  */
 
-import type { AppTraceResult, GraphSummary, TraceResult } from "../core/access-paths.js";
+import type {
+  AppTraceResult,
+  GraphSummary,
+  TraceResult,
+  UserAppExplain,
+  UserAppPath,
+  UserGroupAccess,
+  UserTraceResult,
+} from "../core/access-paths.js";
 import type { CoverageBucket, CoverageReport } from "../analysis/coverage.js";
 import { recommend } from "../analysis/recommendations.js";
 
 export type OutputFormat = "text" | "json";
+
+/**
+ * How a group populates a user: "populated by rule <name>: <expr>" (membership MAY be via that
+ * rule — never evaluated) or "direct or app-push membership" when no rule populates it.
+ */
+function provenanceLabel(rules: UserGroupAccess["populatingRules"] | UserAppPath["populatingRules"]): string {
+  if (rules.length === 0) return "direct or app-push membership";
+  return "populated by rule " + rules.map((r) => `${r.name} (\`${r.expression}\`)`).join(", ");
+}
+
+function policyLabel(policy: { name: string; id: string } | null): string {
+  return policy ? `${policy.name} (${policy.id})` : "— org default app sign-on policy";
+}
 
 export function renderSummary(summary: GraphSummary, format: OutputFormat): string {
   if (format === "json") return JSON.stringify(summary, null, 2);
@@ -65,6 +86,101 @@ export function renderAppTrace(result: AppTraceResult, format: OutputFormat): st
   lines.push("");
   const p = result.authPolicy;
   lines.push(`App auth policy: ${p ? `${p.name} (${p.id})` : "— org default app sign-on policy"}`);
+  return lines.join("\n");
+}
+
+/** Honesty footnote appended to every user-facing access statement. */
+const RUNTIME_CAVEAT =
+  'Note: "provisioned to / gated by" reflects assignment; runtime policy conditions ' +
+  "(MFA, device, network) are not evaluated here.";
+
+export function renderUserTrace(result: UserTraceResult, format: OutputFormat): string {
+  if (format === "json") return JSON.stringify(result, null, 2);
+
+  const lines: string[] = [];
+  lines.push(`User: ${result.user.login} (${result.user.id})`);
+  lines.push("");
+
+  lines.push(`Apps provisioned (${result.apps.length}):`);
+  if (result.apps.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const app of result.apps) {
+      const via = result.viaGroups
+        .filter((v) => v.apps.some((a) => a.id === app.id))
+        .map((v) => v.group.name)
+        .join(", ");
+      lines.push(
+        `  - ${app.name} (${app.id})  ·  via: ${via}  ·  app gate: ${policyLabel(result.appAuthPolicies[app.id])}`,
+      );
+    }
+  }
+  lines.push("");
+
+  lines.push(`Group memberships (${result.viaGroups.length}):`);
+  if (result.viaGroups.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const via of result.viaGroups) {
+      const gsp = via.globalSessionPolicy;
+      lines.push(
+        `  - ${via.group.name} (${via.group.id})  ·  ${provenanceLabel(via.populatingRules)}` +
+          `  ·  session gate: ${gsp ? `${gsp.name} (${gsp.id})` : "(none)"}`,
+      );
+    }
+  }
+  if (result.unknownGroupIds.length > 0) {
+    lines.push(
+      `  (+ ${result.unknownGroupIds.length} membership group(s) outside the loaded Terraform/live scope, not shown)`,
+    );
+  }
+
+  lines.push("");
+  lines.push(RUNTIME_CAVEAT);
+  return lines.join("\n");
+}
+
+export function renderUserAppExplain(result: UserAppExplain, format: OutputFormat): string {
+  if (format === "json") return JSON.stringify(result, null, 2);
+
+  const lines: string[] = [];
+  lines.push(`User: ${result.user.login} (${result.user.id})`);
+  lines.push(`App: ${result.app.name} (${result.app.id})`);
+  lines.push("");
+
+  if (result.hasAccess) {
+    lines.push(`Result: PROVISIONED — reachable via ${result.paths.length} group(s).`);
+    for (const p of result.paths) {
+      const gsp = p.globalSessionPolicy;
+      lines.push(
+        `  - via ${p.group.name} (${p.group.id})  ·  ${provenanceLabel(p.populatingRules)}` +
+          `  ·  session gate: ${gsp ? `${gsp.name} (${gsp.id})` : "(none)"}`,
+      );
+    }
+    lines.push(`App gate: ${policyLabel(result.authPolicy)}`);
+  } else {
+    lines.push(
+      `Result: NOT PROVISIONED — the user is in none of the ${result.grantingGroups.length} group(s) that grant this app.`,
+    );
+    lines.push("");
+    lines.push(`Granted by groups (${result.grantingGroups.length}):`);
+    if (result.grantingGroups.length === 0) {
+      lines.push("  (none — no group grants this app)");
+    } else {
+      for (const g of result.grantingGroups) lines.push(`  - ${g.name} (${g.id})`);
+    }
+    lines.push("");
+    lines.push(`Governing rules (${result.governingRules.length}) — expressions shown verbatim, NOT evaluated:`);
+    if (result.governingRules.length === 0) {
+      lines.push("  (none — the granting group(s) have no populating rule)");
+    } else {
+      for (const r of result.governingRules) lines.push(`  - ${r.name} (${r.id}): \`${r.expression}\``);
+    }
+    lines.push(`App gate (would apply): ${policyLabel(result.authPolicy)}`);
+  }
+
+  lines.push("");
+  lines.push(RUNTIME_CAVEAT);
   return lines.join("\n");
 }
 
