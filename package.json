@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
+    "gen:scale": "tsx scripts/gen-scale-envelope.ts",
     "smoke": "tsx scripts/live-smoke.ts",
     "test": "vitest run",
     "test:watch": "vitest",

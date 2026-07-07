@@ -51,9 +51,10 @@ plan`). Run `coverage --viz <path>` to produce a graph the viewer can open.
 ![okta-iac-lens focus view at enterprise scale](docs/scale.png)
 
 A 15,000-node tenant, kept legible. Instead of rendering the whole graph, the viewer focuses one
-resource (here **Group 0**) and shows only its direct neighbors; a hub's fan-out is truncated to
-the top edges plus a **"+793 more"** aggregate that opens the browsable list. Click any neighbor
-to re-focus and walk the graph one bounded hop at a time. No canvas render depends on org size.
+resource (here **Group 0**, a hub granting 812 apps) and shows only its direct neighbors; the
+fan-out is truncated to the top edges plus a **"+806 more apps"** aggregate that opens the
+browsable list (right panel). Click any neighbor to re-focus and walk the graph one bounded hop
+at a time. No canvas render depends on org size. Reproduce with `npm run gen:scale`.
 
 ## Commands
 
