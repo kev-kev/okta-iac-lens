@@ -16,6 +16,7 @@ import { computeCoverage } from "../src/analysis/coverage.js";
 import { rankRisk } from "../src/analysis/rank-risk.js";
 import { renderRisk } from "../src/render/cli.js";
 import { graphFromFixture, liveResources, stateResources } from "./fixture.js";
+import { syntheticGraph } from "./synthetic.js";
 
 const byId = (rows: ReturnType<typeof rankRisk>, id: string) => rows.find((r) => r.id === id)!;
 
@@ -104,5 +105,22 @@ describe("renderRisk", () => {
     const parsed = JSON.parse(renderRisk(rows, "json"));
     expect(parsed[0].id).toBe("a-gh");
     expect(parsed.map((r: { score: number }) => r.score)).toEqual(rows.map((r) => r.score));
+  });
+});
+
+describe("rankRisk — scale (must stay O(N+E), not per-subject-in-a-loop)", () => {
+  it("ranks a 15k-node / 60k-edge synthetic org well within a smoke bound", () => {
+    const graph = syntheticGraph(); // 10k groups + 5k apps + 60k grants + hubs
+    const t0 = performance.now();
+    const rows = rankRisk(graph);
+    const ms = performance.now() - t0;
+
+    const appsAndGroups = graph.nodes.filter((n) => n.kind === "App" || n.kind === "Group").length;
+    expect(rows).toHaveLength(appsAndGroups);
+    // The hub group g0 (grants 800 apps) has the widest reach → tops the ranking (weak gate too).
+    expect(rows[0].id).toBe("g0");
+    expect(rows[0].reach).toBeGreaterThanOrEqual(800);
+    // Generous bound: O(N+E) finishes in a few ms; the old O(N×E) loop took ~30s.
+    expect(ms).toBeLessThan(1000);
   });
 });

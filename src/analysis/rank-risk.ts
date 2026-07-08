@@ -14,13 +14,7 @@
  *     reconciliation (live vs state), so when it's absent the IaC weight is neutralized.
  */
 
-import type { AppNode, GroupNode, OktaGraph } from "../core/model.js";
-import {
-  appsGrantedByGroup,
-  authPolicyForApp,
-  groupsGrantingApp,
-  sessionPolicyForGroup,
-} from "../core/access-paths.js";
+import type { OktaGraph } from "../core/model.js";
 import type { CoverageBucket, SlimCoverageReport } from "./coverage.js";
 
 /** Score weights. Multiplicative so "wide AND weak AND unmanaged" compounds. Pinned at the M8
@@ -62,31 +56,67 @@ function score(reach: number, gateStrength: "weak" | "strong", iac: CoverageBuck
 }
 
 /**
+ * Add `to` to the set keyed by `from` (a small adjacency-set builder). Deduping via Set matches
+ * the per-subject traversal helpers, which dedupe a repeated (group, app) grant to one.
+ */
+function addToSet(map: Map<string, Set<string>>, key: string, value: string): void {
+  let set = map.get(key);
+  if (!set) map.set(key, (set = new Set()));
+  set.add(value);
+}
+
+/**
  * Rank every App and Group by composite risk, highest first. `coverage` is optional — without it
  * every row's `iac` is "unknown" and the IaC weight is neutral (ranking = reach × gate only).
  * Ties break by reach desc, then name asc, for deterministic output.
+ *
+ * O(nodes + edges): all three signals are precomputed in single passes, then rows are assembled in
+ * one pass — never the per-subject traversal-in-a-loop that would be O(nodes × edges) at scale.
  */
 export function rankRisk(graph: OktaGraph, coverage?: SlimCoverageReport): RiskRow[] {
   const buckets = bucketByNodeId(coverage);
-  const rows: RiskRow[] = [];
 
+  // Reach — deduped `grants` degree in one pass: apps a group grants, groups that grant an app.
+  const appsByGroup = new Map<string, Set<string>>();
+  const groupsByApp = new Map<string, Set<string>>();
+  for (const e of graph.edges) {
+    if (e.kind === "grants") {
+      addToSet(appsByGroup, e.from, e.to);
+      addToSet(groupsByApp, e.to, e.from);
+    }
+  }
+
+  // Gate — a `protects`/`appliesTo` edge counts only if its policy node actually exists (matches
+  // `authPolicyForApp` / `sessionPolicyForGroup`). Collect policy ids, then mark gated targets.
+  const authPolicyIds = new Set<string>();
+  const sessionPolicyIds = new Set<string>();
+  for (const n of graph.nodes) {
+    if (n.kind === "AppAuthPolicy") authPolicyIds.add(n.id);
+    else if (n.kind === "GlobalSessionPolicy") sessionPolicyIds.add(n.id);
+  }
+  const appsWithCustomPolicy = new Set<string>();
+  const groupsWithSession = new Set<string>();
+  for (const e of graph.edges) {
+    if (e.kind === "protects" && authPolicyIds.has(e.from)) appsWithCustomPolicy.add(e.to);
+    else if (e.kind === "appliesTo" && sessionPolicyIds.has(e.from)) groupsWithSession.add(e.to);
+  }
+
+  const rows: RiskRow[] = [];
   for (const node of graph.nodes) {
     if (node.kind === "App") {
-      const app = node as AppNode;
-      const reach = groupsGrantingApp(graph, app.id).length;
-      const custom = authPolicyForApp(graph, app.id) !== null;
+      const reach = groupsByApp.get(node.id)?.size ?? 0;
+      const custom = appsWithCustomPolicy.has(node.id);
       const gate: GateLabel = custom ? "custom" : "org-default";
       const gateStrength = custom ? "strong" : "weak";
-      const iac = buckets.get(app.id) ?? "unknown";
-      rows.push({ id: app.id, kind: "App", name: app.name, reach, gate, gateStrength, iac, score: score(reach, gateStrength, iac) });
+      const iac = buckets.get(node.id) ?? "unknown";
+      rows.push({ id: node.id, kind: "App", name: node.name, reach, gate, gateStrength, iac, score: score(reach, gateStrength, iac) });
     } else if (node.kind === "Group") {
-      const group = node as GroupNode;
-      const reach = appsGrantedByGroup(graph, group.id).length;
-      const hasSession = sessionPolicyForGroup(graph, group.id) !== null;
+      const reach = appsByGroup.get(node.id)?.size ?? 0;
+      const hasSession = groupsWithSession.has(node.id);
       const gate: GateLabel = hasSession ? "session-policy" : "none";
       const gateStrength = hasSession ? "strong" : "weak";
-      const iac = buckets.get(group.id) ?? "unknown";
-      rows.push({ id: group.id, kind: "Group", name: group.name, reach, gate, gateStrength, iac, score: score(reach, gateStrength, iac) });
+      const iac = buckets.get(node.id) ?? "unknown";
+      rows.push({ id: node.id, kind: "Group", name: node.name, reach, gate, gateStrength, iac, score: score(reach, gateStrength, iac) });
     }
   }
 
