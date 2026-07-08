@@ -24,6 +24,8 @@
     "HiddenNeighborsPanel.tsx",
     "FocusDetailPanel.tsx",
     "OverviewCanvas.tsx",
-    "CohortList.tsx"
+    "CohortList.tsx",
+    "UserTracePanel.tsx",
+    "UserTraceView.tsx"
   ]
 }

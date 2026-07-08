@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import type { NodeKind } from "../../core/model.js";
-import { trace } from "../../core/access-paths.js";
-import type { TraceResult } from "../../core/access-paths.js";
+import type { NodeKind, OktaGraph } from "../../core/model.js";
+import { trace, traceUser } from "../../core/access-paths.js";
+import type { TraceResult, UserTraceResult } from "../../core/access-paths.js";
 import { EnvelopeError, parseEnvelope } from "./parse-envelope.js";
 import type { ParsedEnvelope } from "./parse-envelope.js";
 import { deriveCards } from "./derive-cards.js";
@@ -27,6 +27,7 @@ import { buildCohorts } from "./cohorts.js";
 import { OverviewCanvas } from "./OverviewCanvas.js";
 import { CohortList } from "./CohortList.js";
 import { VirtualList } from "./VirtualList.js";
+import { UserTraceView } from "./UserTraceView.js";
 
 type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
 
@@ -41,6 +42,13 @@ export function App() {
   const [query, setQuery] = useState("");
   const [showLabels, setShowLabels] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
+  // M9 live mode (the local server). `liveMode` null = probing, false = offline (static), true = live.
+  const [liveMode, setLiveMode] = useState<boolean | null>(null);
+  const [userLogin, setUserLogin] = useState("");
+  const [userTrace, setUserTrace] = useState<UserTraceResult | null>(null);
+  const [liveBusy, setLiveBusy] = useState(false);
+  // Latest graph, readable from the async user-trace callback without re-creating it each render.
+  const graphRef = useRef<OktaGraph | null>(null);
 
   /** Changing focus always closes the hidden-neighbors panel. */
   const setFocusId = useCallback((id: string | null) => {
@@ -48,25 +56,87 @@ export function App() {
     setExpanded(null);
   }, []);
 
-  const load = useCallback(async (file: File) => {
+  /** Probe the local server once on mount. No server / no creds ⇒ live stays off (offline as today). */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/health");
+        const body = (await res.json()) as { live?: boolean };
+        if (alive) setLiveMode(res.ok && body.live === true);
+      } catch {
+        if (alive) setLiveMode(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** Apply a parsed envelope + reset the view. Shared by file open, drag-drop, and live pull. */
+  const applyEnvelope = useCallback((parsed: ParsedEnvelope) => {
+    setEnvelope(parsed);
+    setSelection(null);
+    setFocusId(null);
+    setCohortId(null);
+    setBrowseAll(false);
+    setUserTrace(null);
+    setQuery("");
+    setError(null);
+  }, [setFocusId]);
+
+  const onLoadError = useCallback((e: unknown) => {
+    setEnvelope(null);
+    setSelection(null);
+    setFocusId(null);
+    if (e instanceof EnvelopeError) setError(e.message);
+    else if (e instanceof SyntaxError) setError("That file isn't valid JSON.");
+    else setError(e instanceof Error ? e.message : String(e));
+  }, [setFocusId]);
+
+  const load = useCallback(
+    async (file: File) => {
+      try {
+        applyEnvelope(parseEnvelope(JSON.parse(await file.text())));
+      } catch (e) {
+        onLoadError(e);
+      }
+    },
+    [applyEnvelope, onLoadError],
+  );
+
+  /** M9: pull a live envelope from the local server (no manual export step). */
+  const loadLive = useCallback(async () => {
+    setLiveBusy(true);
     try {
-      const parsed = parseEnvelope(JSON.parse(await file.text()));
-      setEnvelope(parsed);
-      setSelection(null);
-      setFocusId(null);
-      setCohortId(null);
-      setBrowseAll(false);
-      setQuery("");
+      const res = await fetch("/api/graph");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? `Live load failed (${res.status}).`);
+      applyEnvelope(parseEnvelope(body));
+    } catch (e) {
+      onLoadError(e);
+    } finally {
+      setLiveBusy(false);
+    }
+  }, [applyEnvelope, onLoadError]);
+
+  /** M9: resolve one user's membership live (token stays server-side), then trace in-browser. */
+  const runUserTrace = useCallback(async () => {
+    const login = userLogin.trim();
+    if (!login || !graphRef.current) return;
+    setLiveBusy(true);
+    try {
+      const res = await fetch(`/api/user-membership?login=${encodeURIComponent(login)}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? `User lookup failed (${res.status}).`);
+      setUserTrace(traceUser(graphRef.current, body));
       setError(null);
     } catch (e) {
-      setEnvelope(null);
-      setSelection(null);
-      setFocusId(null);
-      if (e instanceof EnvelopeError) setError(e.message);
-      else if (e instanceof SyntaxError) setError("That file isn't valid JSON.");
-      else setError(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLiveBusy(false);
     }
-  }, []);
+  }, [userLogin]);
 
   const onDrop = useCallback(
     (e: DragEvent) => {
@@ -78,6 +148,7 @@ export function App() {
   );
 
   const graph = envelope?.graph ?? null;
+  graphRef.current = graph;
   const cards = useMemo(() => (graph ? deriveCards(graph) : null), [graph]);
 
   const nameById = useMemo(() => {
@@ -184,6 +255,30 @@ export function App() {
             }}
           />
         </label>
+        {liveMode && (
+          <button type="button" className="file-btn" onClick={() => void loadLive()} disabled={liveBusy}>
+            {liveBusy ? "Loading…" : "Load tenant live"}
+          </button>
+        )}
+        {liveMode && envelope && (
+          <form
+            className="user-trace-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void runUserTrace();
+            }}
+          >
+            <input
+              className="header-search"
+              placeholder="Trace a user by email…"
+              value={userLogin}
+              onChange={(e) => setUserLogin(e.target.value)}
+            />
+            <button type="submit" className="file-btn" disabled={liveBusy || userLogin.trim() === ""}>
+              Trace user
+            </button>
+          </form>
+        )}
         {envelope && (
           <>
             <span className="meta">
@@ -232,8 +327,16 @@ export function App() {
           </p>
           <p className="hint">
             Generate one with <code>npm run dev -- export --state &lt;tfstate&gt;</code>
+            {liveMode ? " — or Load tenant live." : "."}
           </p>
         </div>
+      ) : userTrace ? (
+        <UserTraceView
+          graph={graph}
+          result={userTrace}
+          showLabels={showLabels}
+          onBack={() => setUserTrace(null)}
+        />
       ) : isLarge ? (
         searchResults ? (
           <div className="explorer-main">
