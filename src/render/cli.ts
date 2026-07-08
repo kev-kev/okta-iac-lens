@@ -14,6 +14,7 @@ import type {
   UserTraceResult,
 } from "../core/access-paths.js";
 import type { CoverageBucket, CoverageReport } from "../analysis/coverage.js";
+import type { RiskRow } from "../analysis/rank-risk.js";
 import { recommend } from "../analysis/recommendations.js";
 
 export type OutputFormat = "text" | "json";
@@ -181,6 +182,31 @@ export function renderUserAppExplain(result: UserAppExplain, format: OutputForma
 
   lines.push("");
   lines.push(RUNTIME_CAVEAT);
+  return lines.join("\n");
+}
+
+export function renderRisk(rows: RiskRow[], format: OutputFormat): string {
+  if (format === "json") return JSON.stringify(rows, null, 2);
+
+  const lines: string[] = [];
+  lines.push("Risk-ranked resources — widest reach × weakest gate × not-in-Terraform first");
+  lines.push("");
+
+  lines.push("  " + "#".padStart(3) + "  " + "resource".padEnd(24) + "kind".padEnd(7) + "reach".padStart(6) + "  " + "gate".padEnd(25) + "iac".padEnd(11) + "score");
+  rows.forEach((r, i) => {
+    const iac = r.iac === "unknown" ? "n/a" : r.iac;
+    const gate = `${r.gate} (${r.gateStrength})`;
+    lines.push(
+      "  " +
+        `${i + 1}`.padStart(3) + "  " +
+        r.name.slice(0, 23).padEnd(24) +
+        r.kind.padEnd(7) +
+        `${r.reach}`.padStart(6) + "  " +
+        gate.padEnd(25) +
+        iac.padEnd(11) +
+        `${r.score}`,
+    );
+  });
   return lines.join("\n");
 }
 

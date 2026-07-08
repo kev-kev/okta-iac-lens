@@ -37,11 +37,11 @@ export interface GraphSummary {
 }
 
 // --- Shared edge-walk helpers. Pure; each answers one hop of the access model. ---
-// `trace`, `traceApp`, and `traceUser` all compose these so the traversal semantics
-// (grant order, dedupe, "org default != unprotected") live in exactly one place.
+// `trace`, `traceApp`, `traceUser`, and `rankRisk` (analysis) all compose these so the
+// traversal semantics (grant order, dedupe, "org default != unprotected") live in one place.
 
 /** grants: Group -> App. Apps a group grants, in grant (edge) order, deduped. */
-function appsGrantedByGroup(graph: OktaGraph, groupId: string): AppNode[] {
+export function appsGrantedByGroup(graph: OktaGraph, groupId: string): AppNode[] {
   const apps: AppNode[] = [];
   const seen = new Set<string>();
   for (const edge of graph.edges) {
@@ -56,7 +56,7 @@ function appsGrantedByGroup(graph: OktaGraph, groupId: string): AppNode[] {
 }
 
 /** grants: Group -> App (reverse). Groups granting an app, in edge order, deduped. */
-function groupsGrantingApp(graph: OktaGraph, appId: string): GroupNode[] {
+export function groupsGrantingApp(graph: OktaGraph, appId: string): GroupNode[] {
   const groups: GroupNode[] = [];
   const seen = new Set<string>();
   for (const edge of graph.edges) {
@@ -71,7 +71,10 @@ function groupsGrantingApp(graph: OktaGraph, appId: string): GroupNode[] {
 }
 
 /** appliesTo: GlobalSessionPolicy -> Group. At most one applies; take the first. */
-function sessionPolicyForGroup(graph: OktaGraph, groupId: string): GlobalSessionPolicyNode | null {
+export function sessionPolicyForGroup(
+  graph: OktaGraph,
+  groupId: string,
+): GlobalSessionPolicyNode | null {
   const applies = graph.edges.find((e) => e.kind === "appliesTo" && e.to === groupId);
   if (!applies) return null;
   return (
@@ -83,7 +86,7 @@ function sessionPolicyForGroup(graph: OktaGraph, groupId: string): GlobalSession
 }
 
 /** protects: AppAuthPolicy -> App. Absence of an edge => org default (null), NOT unprotected. */
-function authPolicyForApp(graph: OktaGraph, appId: string): AppAuthPolicyNode | null {
+export function authPolicyForApp(graph: OktaGraph, appId: string): AppAuthPolicyNode | null {
   const protects = graph.edges.find((e) => e.kind === "protects" && e.to === appId);
   if (!protects) return null;
   return (
