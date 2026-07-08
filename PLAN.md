@@ -27,7 +27,9 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 ### Phase C — ground truth + wrap (pending)
 - [ ] Live full-signal run: `risk --iac --state <path>` against the Integrator tenant → an unmanaged/wide/weak resource tops the list; sanity-check against the console. (Opus, read-only.)
 - [ ] Viewer visual check: `npm run gen:scale` → `npm run web` → App/Group tabs lead with hubs behind weak gates; a focus view reads blast-radius. Screenshot → README.
-- [ ] Branch `/security-review`; PR; merge to `main`.
+- [x] Viewer visual check passed after O(N+E) perf fix (Browse-all was ~30s at 15k nodes; now instant; scale-guard test added).
+- [x] Branch `/security-review` — **clean**, no HIGH/MEDIUM findings: rankRisk is pure in-memory computation; `risk` CLI reuses existing reviewed I/O seams; renderers are text/JSX-escaped; no new PII/token/write surface. PR; merge to `main`.
+- [ ] (Optional, post-merge) Live full-signal run: `risk --iac --state <path>` against the Integrator tenant.
 
 ## Deferred (do NOT build in M8) → M9 and beyond
 
