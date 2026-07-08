@@ -26,8 +26,8 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 
 ### Phase C — wrap (in progress)
 - [x] CSS legibility fix; README + PLAN updated (live mode; token stays server-side; static-bundle claim corrected).
-- [ ] **Security review — REQUIRED, focused on the new endpoint** (`/security-review`): Host/Origin gate rejects spoofed hosts + cross-site origins; token never crosses to the browser or a log; GET/read-only; no SSRF (login `encodeURIComponent`'d) / no path traversal (Vite owns assets).
-- [ ] Branch `/security-review`; PR; merge to `main`; branch cleanup.
+- [x] **Security review — CLEAN**, no HIGH/MEDIUM findings: Host allowlist blocks DNS-rebind + LAN (exact loopback match, holds even under `vite --host`); Origin check blocks cross-site reads; GET-only/read-only; token stays server-side, never in a response or log; `login` `encodeURIComponent`'d (no SSRF/traversal); no custom static serving; React auto-escapes.
+- [ ] PR; merge to `main`; branch cleanup.
 - [ ] (Optional) Screenshot the on-canvas user trace → README.
 
 ## Deferred (do NOT build in M9) → later
