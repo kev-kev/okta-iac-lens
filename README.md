@@ -38,6 +38,13 @@ current milestone.
   and their governing rules). The wording is deliberately **"provisioned to / gated by," never
   "can access"** — a static read can't account for runtime policy conditions (MFA, device,
   network), and the output says so.
+- **Risk-ranked landing** (M8) — `risk` (CLI) and the viewer inventory rank apps and groups by a
+  composite an IT engineer cares about: **reach** (how many groups grant an app / apps a group
+  grants) × **gate strength** (org-default / no session policy = weak; a custom policy = strong)
+  × **IaC status** (not-in-Terraform, from coverage). "Widest reach, weakest gate, not in
+  Terraform" sorts first. The ranking is **legible, not a black box** — every row shows the raw
+  signals next to the score. The focus view also reads blast-radius in ticket words: *"42 apps
+  and 3 rules depend on this group."*
 
 ### Access-path viewer
 
@@ -104,6 +111,10 @@ npm run dev -- trace    --app   "GitHub"      --state fixtures/sample-tenant.tfs
 # user access trace (live, read-only): what is this person provisioned to, and how?
 npm run dev -- trace    --user  "ada@example.com" --source okta
 npm run dev -- trace    --user  "ada@example.com" --app "GitHub" --source okta  # explain one app
+
+# risk-ranked inventory: reach × gate strength × IaC status (widest/weakest/unmanaged first)
+npm run dev -- risk --source tfstate --state fixtures/sample-tenant.tfstate.json
+npm run dev -- risk --iac --state fixtures/sample-tenant.tfstate.json   # + IaC signal (live vs state)
 
 # IaC coverage: live tenant vs Terraform state, with import blocks for the gap
 npm run dev -- coverage --state generated/seed-state.json --imports generated/imports.tf
