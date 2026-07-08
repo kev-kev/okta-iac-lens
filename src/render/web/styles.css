@@ -59,10 +59,19 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #0b1220;
+  color: var(--text);
 }
 
 .file-btn input {
   display: none;
+}
+
+/* React Flow's attribution badge sits bottom-right; make it legible on the dark canvas. */
+.react-flow__attribution {
+  background: rgba(15, 23, 42, 0.7);
+}
+.react-flow__attribution a {
+  color: var(--muted);
 }
 
 .meta {

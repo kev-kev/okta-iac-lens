@@ -45,6 +45,13 @@ current milestone.
   Terraform" sorts first. The ranking is **legible, not a black box** — every row shows the raw
   signals next to the score. The focus view also reads blast-radius in ticket words: *"42 apps
   and 3 rules depend on this group."*
+- **Live mode + visual user trace** (M9) — run `npm run web` with credentials and the viewer gains a
+  **local read-only server** (browser → localhost → Okta): **Load tenant live** pulls the tenant with
+  no export step, and **tracing a user by email** renders *their* access **on the canvas** — their
+  groups → granted apps with both policy layers as badges — beside the textual breakdown. The
+  **SSWS token stays server-side** (never in the browser; the browser only computes the same pure
+  `traceUser` the CLI uses). Opened as a static file with no server, the viewer is exactly as
+  before: fully offline, file-open only.
 
 ### Access-path viewer
 
@@ -121,8 +128,8 @@ npm run dev -- coverage --state generated/seed-state.json --imports generated/im
 
 # export a graph for the viewer, then open the viewer
 npm run dev -- export   --state fixtures/sample-tenant.tfstate.json -o generated/graph.json
-npm run web                 # Vite dev server for the viewer
-npm run web:build           # static bundle -> dist-web/
+npm run web                 # Vite dev server; with OKTA_* set, unlocks live mode (M9)
+npm run web:build           # static bundle -> dist-web/ (offline-only)
 ```
 
 Live mode (`--source okta`, and `coverage`) reads credentials from env vars
@@ -135,4 +142,8 @@ Live mode (`--source okta`, and `coverage`) reads credentials from env vars
 - State files and live exports contain secrets and PII. `.gitignore` excludes `.env`,
   `*.tfstate` / `*.tfstate.json`, and `generated/` (the fake-data fixture is the sole, explicit
   exception). Credentials live in env vars only — never hardcoded, never committed.
-- The viewer is fully static and makes no network calls; it only opens a graph JSON you export.
+- The viewer's static bundle makes **no network calls** — it only opens a graph JSON you export.
+  Its opt-in **live mode** (M9, only under `npm run web`) adds a **local read-only server** bound to
+  localhost: the browser calls `localhost`, the server calls Okta with the SSWS token, which **never
+  enters the browser**. The endpoint is GET-only and rejects non-loopback `Host` and cross-site
+  `Origin` requests (DNS-rebinding / cross-site defense).
