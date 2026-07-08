@@ -59,10 +59,19 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #0b1220;
+  color: var(--text);
 }
 
 .file-btn input {
   display: none;
+}
+
+/* React Flow's attribution badge sits bottom-right; make it legible on the dark canvas. */
+.react-flow__attribution {
+  background: rgba(15, 23, 42, 0.7);
+}
+.react-flow__attribution a {
+  color: var(--muted);
 }
 
 .meta {
@@ -761,4 +770,37 @@ button.policy-badge:hover {
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 11px;
+}
+
+/* M9 live mode: the user-trace header form + the user-access panel rows. */
+.user-trace-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.app-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  color: inherit;
+  cursor: pointer;
+}
+.app-row:hover {
+  text-decoration: none;
+  background: #0b1220;
+}
+.via-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 8px;
+  font-size: 12px;
+  border-left: 2px solid var(--border);
+}
+.via-list li {
+  padding: 2px 0;
 }
