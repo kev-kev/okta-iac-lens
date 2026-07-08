@@ -66,6 +66,28 @@ fan-out is truncated to the top edges plus a **"+806 more apps"** aggregate that
 browsable list (right panel). Click any neighbor to re-focus and walk the graph one bounded hop
 at a time. No canvas render depends on org size. Reproduce with `npm run gen:scale`.
 
+### User access trace
+
+Live output for a test user (ids redacted), validated against the Okta admin console:
+
+```
+User: ada@example.com (00u...)
+
+Apps provisioned (2):
+  - Datadog (0oa...)  ·  via: Engineering  ·  app gate: Strict-Auth (rst...)
+  - GitHub (0oa...)  ·  via: Engineering  ·  app gate: — org default app sign-on policy
+
+Group memberships (2):
+  - Everyone (00g...)  ·  direct or app-push membership  ·  session gate: Default Policy (00p...)
+  - Engineering (00g...)  ·  populated by rule eng-rule (`user.department=="Engineering"`)  ·  session gate: Default-MFA (00p...)
+
+Note: "provisioned to / gated by" reflects assignment; runtime policy conditions (MFA, device, network) are not evaluated here.
+```
+
+Every claim is honest by construction: provenance says a rule *populates* the group (never that
+it admitted this user — that's unknowable from a static read), expressions are shown verbatim and
+never evaluated, and the caveat rides on every trace.
+
 ## Commands
 
 ```sh
