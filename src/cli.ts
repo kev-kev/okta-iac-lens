@@ -9,11 +9,23 @@
 import { writeFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import { buildGraph } from "./core/build-graph.js";
-import { summarize, trace, traceApp } from "./core/access-paths.js";
+import { explainUserApp, summarize, trace, traceApp, traceUser } from "./core/access-paths.js";
 import { computeCoverage, slimCoverage } from "./analysis/coverage.js";
 import { generateImportBlocks } from "./analysis/import-blocks.js";
-import { loadDotEnv, loadLiveResources, loadStateResources } from "./inputs/load-resources.js";
-import { renderAppTrace, renderCoverage, renderSummary, renderTrace } from "./render/cli.js";
+import {
+  loadDotEnv,
+  loadLiveResources,
+  loadStateResources,
+  loadUserMembership,
+} from "./inputs/load-resources.js";
+import {
+  renderAppTrace,
+  renderCoverage,
+  renderSummary,
+  renderTrace,
+  renderUserAppExplain,
+  renderUserTrace,
+} from "./render/cli.js";
 import type { OutputFormat } from "./render/cli.js";
 import { makeEnvelope } from "./render/envelope.js";
 
@@ -64,29 +76,57 @@ program
 
 program
   .command("trace")
-  .description("Trace access: what a group grants (--group), or what reaches an app (--app).")
+  .description(
+    "Trace access: what a group grants (--group), what reaches an app (--app), or what a user is provisioned to (--user).",
+  )
   .option("--group <nameOrId>", "group display name or id")
   .option("--app <nameOrId>", "app display name or id (reverse trace: which groups reach it)")
+  .option("--user <email>", "user email/login — live trace of what this user is provisioned to (requires --source okta; --app narrows to one app)")
   .addOption(sourceOption())
   .option("--state <path>", "path to `terraform show -json` output (tfstate source)")
   .option("--json", "output JSON instead of text")
-  .action(async (opts: SourceOpts & { group?: string; app?: string; json?: boolean }) => {
-    try {
-      if ((opts.group == null) === (opts.app == null)) {
-        throw new Error("trace requires exactly one of --group <nameOrId> or --app <nameOrId>.");
+  .action(
+    async (opts: SourceOpts & { group?: string; app?: string; user?: string; json?: boolean }) => {
+      try {
+        const format: OutputFormat = opts.json ? "json" : "text";
+
+        // User trace is live-only (Terraform state has no users) and looks up ONE user, then
+        // feeds their group ids into the same graph traversal as the group/app traces.
+        if (opts.user != null) {
+          if (opts.group != null) {
+            throw new Error("trace --user cannot be combined with --group.");
+          }
+          if (opts.source !== "okta") {
+            throw new Error("trace --user requires --source okta (Terraform state has no users).");
+          }
+          const graph = await loadGraph(opts);
+          const membership = await loadUserMembership(opts.user);
+          const result = traceUser(graph, membership);
+          console.log(
+            opts.app != null
+              ? renderUserAppExplain(explainUserApp(graph, result, opts.app), format)
+              : renderUserTrace(result, format),
+          );
+          return;
+        }
+
+        if ((opts.group == null) === (opts.app == null)) {
+          throw new Error(
+            "trace requires exactly one of --group <nameOrId>, --app <nameOrId>, or --user <email>.",
+          );
+        }
+        const graph = await loadGraph(opts);
+        console.log(
+          opts.app != null
+            ? renderAppTrace(traceApp(graph, opts.app), format)
+            : renderTrace(trace(graph, opts.group as string), format),
+        );
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exitCode = 1;
       }
-      const graph = await loadGraph(opts);
-      const format: OutputFormat = opts.json ? "json" : "text";
-      console.log(
-        opts.app != null
-          ? renderAppTrace(traceApp(graph, opts.app), format)
-          : renderTrace(trace(graph, opts.group as string), format),
-      );
-    } catch (err) {
-      console.error(err instanceof Error ? err.message : String(err));
-      process.exitCode = 1;
-    }
-  });
+    },
+  );
 
 program
   .command("coverage")

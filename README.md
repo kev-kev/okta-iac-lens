@@ -28,6 +28,16 @@ current milestone.
   (one resource and its direct neighbors) with **hub truncation** — never the whole graph. The
   view definition, not the renderer, is what stays bounded, so legibility holds at 5k apps /
   10k groups / 60k assignments. Below the threshold, the full M4/M5 canvas renders unchanged.
+- **User access trace** (M7) — `trace --user <email>` answers the question an IT engineer
+  actually asks: *what is this person provisioned to, and how?* It looks up one user live
+  (read-only), then feeds their group memberships through the same group→app→policy machinery —
+  a **user is a trace input, never a graph node**, so it scales without adding user nodes. Each
+  app is shown with its granting group, whether that group is **rule-populated** (the rule
+  expression is surfaced, never evaluated) or a direct membership, and both policy gates.
+  `--app <name>` narrows to one app and, on no access, explains *why not* (which groups grant it
+  and their governing rules). The wording is deliberately **"provisioned to / gated by," never
+  "can access"** — a static read can't account for runtime policy conditions (MFA, device,
+  network), and the output says so.
 
 ### Access-path viewer
 
@@ -67,6 +77,11 @@ npm run dev -- <args>       # run the CLI without building (tsx src/cli.ts)
 # trace + summary (state file or live tenant via --source okta)
 npm run dev -- summary  --state fixtures/sample-tenant.tfstate.json
 npm run dev -- trace    --group "Engineering" --state fixtures/sample-tenant.tfstate.json
+npm run dev -- trace    --app   "GitHub"      --state fixtures/sample-tenant.tfstate.json
+
+# user access trace (live, read-only): what is this person provisioned to, and how?
+npm run dev -- trace    --user  "ada@example.com" --source okta
+npm run dev -- trace    --user  "ada@example.com" --app "GitHub" --source okta  # explain one app
 
 # IaC coverage: live tenant vs Terraform state, with import blocks for the gap
 npm run dev -- coverage --state generated/seed-state.json --imports generated/imports.tf
