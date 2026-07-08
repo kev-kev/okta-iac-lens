@@ -12,6 +12,7 @@ import { buildGraph } from "./core/build-graph.js";
 import { explainUserApp, summarize, trace, traceApp, traceUser } from "./core/access-paths.js";
 import { computeCoverage, slimCoverage } from "./analysis/coverage.js";
 import { generateImportBlocks } from "./analysis/import-blocks.js";
+import { rankRisk } from "./analysis/rank-risk.js";
 import {
   loadDotEnv,
   loadLiveResources,
@@ -21,6 +22,7 @@ import {
 import {
   renderAppTrace,
   renderCoverage,
+  renderRisk,
   renderSummary,
   renderTrace,
   renderUserAppExplain,
@@ -127,6 +129,42 @@ program
       }
     },
   );
+
+program
+  .command("risk")
+  .description(
+    "Rank apps and groups by composite risk: reach × gate strength × IaC status (widest reach, weakest gate, not-in-Terraform first).",
+  )
+  .addOption(sourceOption())
+  .option("--state <path>", "path to `terraform show -json` output (tfstate source, or the baseline for --iac)")
+  .option("--iac", "add the IaC-status signal by reconciling the live tenant vs --state (requires okta creds + --state)")
+  .option("--json", "output JSON instead of text")
+  .action(async (opts: SourceOpts & { iac?: boolean; json?: boolean }) => {
+    try {
+      const format: OutputFormat = opts.json ? "json" : "text";
+
+      // Full three-signal ranking: reconcile live vs state (like `coverage`) so IaC status is
+      // available, and rank the LIVE graph (which includes unmanaged resources).
+      if (opts.iac) {
+        if (!opts.state) {
+          throw new Error("risk --iac requires --state <path> (the managed baseline to reconcile against).");
+        }
+        loadDotEnv();
+        const state = await loadStateResources(opts.state);
+        const live = await loadLiveResources();
+        const coverage = computeCoverage(live, state);
+        console.log(renderRisk(rankRisk(buildGraph(live), coverage), format));
+        return;
+      }
+
+      // Reach + gate only (single source); IaC shown as n/a.
+      const graph = await loadGraph(opts);
+      console.log(renderRisk(rankRisk(graph), format));
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
 
 program
   .command("coverage")

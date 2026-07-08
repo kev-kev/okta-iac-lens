@@ -66,6 +66,25 @@ const BUCKET_LABEL: Record<CoverageBucket, string> = {
   excluded: "Okta-managed",
 };
 
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+/** Ticket-ready blast-radius wording: what depends on / reaches this resource, from counts in hand. */
+function blastLine(graph: OktaGraph, node: GraphNode, detail: Detail): string {
+  if (detail.kind === "Group") {
+    const ruleCount = graph.edges.filter((e) => e.kind === "populates" && e.to === node.id).length;
+    const rulePart = ruleCount > 0 ? ` and ${plural(ruleCount, "rule")}` : "";
+    return `${plural(detail.rows.length, "app")}${rulePart} depend on this group`;
+  }
+  if (detail.kind === "App") {
+    const ruleCount = detail.secondary?.rows.length ?? 0;
+    const rulePart = ruleCount > 0 ? ` via ${plural(ruleCount, "rule")}` : "";
+    return `Reached by ${plural(detail.rows.length, "group")}${rulePart}`;
+  }
+  return `${plural(detail.rows.length, "group")} depend on this rule`;
+}
+
 export function FocusDetailPanel({
   graph,
   focusId,
@@ -93,7 +112,7 @@ export function FocusDetailPanel({
       </div>
 
       <div className="cov-summary">
-        {detail.rows.length} {detail.listHeading.toLowerCase()}
+        {blastLine(graph, node, detail)}
         {detail.gateLabel ? ` · ${detail.gateLabel}: ${detail.gateValue}` : ""}
         {bucket ? ` · ${BUCKET_LABEL[bucket]}` : ""}
       </div>

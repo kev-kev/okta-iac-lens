@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import type { GraphNode, NodeKind, OktaGraph } from "../../core/model.js";
 import type { CoverageBucket, SlimCoverageReport } from "../../analysis/coverage.js";
+import { rankRisk, type RiskRow } from "../../analysis/rank-risk.js";
 import type { GraphIndexes } from "./indexes.js";
 import { CoveragePanel } from "./CoveragePanel.js";
 import { VirtualList } from "./VirtualList.js";
@@ -35,6 +36,7 @@ export function Explorer({
 }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<NodeKind>("Group");
+  const [sortBy, setSortBy] = useState<"risk" | "name">("risk");
 
   const bucketByNodeId = useMemo(() => {
     const m = new Map<string, CoverageBucket>();
@@ -44,6 +46,18 @@ export function Explorer({
     return m;
   }, [coverage]);
 
+  // Risk ranking (apps + groups). `orderById` gives the rank position; `byId` the signals per row.
+  const risk = useMemo(() => {
+    const ranked = rankRisk(graph, coverage ?? undefined);
+    const byId = new Map<string, RiskRow>();
+    const orderById = new Map<string, number>();
+    ranked.forEach((r, i) => {
+      byId.set(r.id, r);
+      orderById.set(r.id, i);
+    });
+    return { byId, orderById };
+  }, [graph, coverage]);
+
   const counts = useMemo(() => {
     const c = new Map<NodeKind, number>();
     for (const n of graph.nodes) c.set(n.kind, (c.get(n.kind) ?? 0) + 1);
@@ -51,10 +65,20 @@ export function Explorer({
   }, [graph]);
 
   const searching = query.trim().length > 0;
+  // Risk order only applies to apps + groups (rankRisk's domain).
+  const rankable = tab === "App" || tab === "Group";
   const rows: GraphNode[] = useMemo(() => {
     if (searching) return indexes.search(query, 200);
-    return graph.nodes.filter((n) => n.kind === tab);
-  }, [searching, query, indexes, graph, tab]);
+    const base = graph.nodes.filter((n) => n.kind === tab);
+    if (rankable && sortBy === "risk") {
+      return [...base].sort(
+        (a, b) =>
+          (risk.orderById.get(a.id) ?? Number.POSITIVE_INFINITY) -
+          (risk.orderById.get(b.id) ?? Number.POSITIVE_INFINITY),
+      );
+    }
+    return base;
+  }, [searching, query, indexes, graph, tab, rankable, sortBy, risk]);
 
   return (
     <div className="explorer">
@@ -80,7 +104,28 @@ export function Explorer({
           </div>
         )}
         <div className="list-head">
-          {searching ? `${rows.length} match${rows.length === 1 ? "" : "es"}` : `${rows.length} rows`}
+          <span>
+            {searching ? `${rows.length} match${rows.length === 1 ? "" : "es"}` : `${rows.length} rows`}
+          </span>
+          {!searching && rankable && (
+            <span className="sort-toggle">
+              sorted by{" "}
+              <button
+                type="button"
+                className={`sort-opt${sortBy === "risk" ? " is-active" : ""}`}
+                onClick={() => setSortBy("risk")}
+              >
+                risk
+              </button>
+              <button
+                type="button"
+                className={`sort-opt${sortBy === "name" ? " is-active" : ""}`}
+                onClick={() => setSortBy("name")}
+              >
+                name
+              </button>
+            </span>
+          )}
         </div>
         <VirtualList
           items={rows}
@@ -90,9 +135,14 @@ export function Explorer({
           renderRow={(n) => {
             const bucket = bucketByNodeId.get(n.id);
             const focusable = FOCUSABLE.has(n.kind);
-            const meta = `${n.kind}${bucket && bucket !== "managed" ? ` · ${bucket}` : ""}`;
+            const rr = risk.byId.get(n.id);
+            // Risk-bearing kinds show their signals; other kinds keep the kind label.
+            const meta = rr
+              ? `reach ${rr.reach} · ${rr.gate}${bucket && bucket !== "managed" ? ` · ${bucket}` : ""}`
+              : `${n.kind}${bucket && bucket !== "managed" ? ` · ${bucket}` : ""}`;
+            const rowClass = `explorer-row${rr?.gateStrength === "weak" ? " is-weak-gate" : ""}`;
             return focusable ? (
-              <button type="button" className="explorer-row" onClick={() => onFocus(n.id)}>
+              <button type="button" className={rowClass} onClick={() => onFocus(n.id)}>
                 <span className="row-name">{n.name}</span>
                 <span className="row-meta">{meta}</span>
               </button>
