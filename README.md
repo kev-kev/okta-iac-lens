@@ -82,7 +82,13 @@ at a time. No canvas render depends on org size. Reproduce with `npm run gen:sca
 
 ### User access trace
 
-Live output for a test user (ids redacted), validated against the Okta admin console:
+![okta-iac-lens live visual user trace](docs/trace.png)
+
+Live mode (M9): type a user's email and their access renders **on the canvas** — memberships →
+granted apps with both policy layers as badges — beside the full breakdown (provenance per group,
+gate per app). The lookup runs on the local server; the SSWS token never enters the browser.
+
+The same trace on the CLI (ids redacted), validated against the Okta admin console:
 
 ```
 User: ada@example.com (00u...)
