@@ -11,6 +11,7 @@ import { rankRisk, type RiskRow } from "../../analysis/rank-risk.js";
 import type { GraphIndexes } from "./indexes.js";
 import { CoveragePanel } from "./CoveragePanel.js";
 import { VirtualList } from "./VirtualList.js";
+import { HighlightedText } from "./HighlightedText.js";
 
 const KINDS: { kind: NodeKind; label: string }[] = [
   { kind: "Group", label: "Groups" },
@@ -141,14 +142,15 @@ export function Explorer({
               ? `reach ${rr.reach} · ${rr.gate}${bucket && bucket !== "managed" ? ` · ${bucket}` : ""}`
               : `${n.kind}${bucket && bucket !== "managed" ? ` · ${bucket}` : ""}`;
             const rowClass = `explorer-row${rr?.gateStrength === "weak" ? " is-weak-gate" : ""}`;
+            const name = <HighlightedText text={n.name} query={searching ? query : ""} />;
             return focusable ? (
               <button type="button" className={rowClass} onClick={() => onFocus(n.id)}>
-                <span className="row-name">{n.name}</span>
+                <span className="row-name">{name}</span>
                 <span className="row-meta">{meta}</span>
               </button>
             ) : (
               <div className="explorer-row is-static">
-                <span className="row-name">{n.name}</span>
+                <span className="row-name">{name}</span>
                 <span className="row-meta">{meta}</span>
               </div>
             );

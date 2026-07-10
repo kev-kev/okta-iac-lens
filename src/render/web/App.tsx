@@ -28,6 +28,7 @@ import { OverviewCanvas } from "./OverviewCanvas.js";
 import { CohortList } from "./CohortList.js";
 import { VirtualList } from "./VirtualList.js";
 import { UserTraceView } from "./UserTraceView.js";
+import { HighlightedText } from "./HighlightedText.js";
 
 type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
 
@@ -362,7 +363,9 @@ export function App() {
                     setFocusId(n.id);
                   }}
                 >
-                  <span className="row-name">{n.name}</span>
+                  <span className="row-name">
+                    <HighlightedText text={n.name} query={query} />
+                  </span>
                   <span className="row-meta">{n.kind}</span>
                 </button>
               )}

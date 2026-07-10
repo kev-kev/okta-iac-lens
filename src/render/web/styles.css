@@ -364,6 +364,13 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Lit run of a search-result name: classic highlighter, readable on the dark row. */
+.search-hit {
+  background: #fde68a;
+  color: #111827;
+  border-radius: 2px;
+  padding: 0 1px;
+}
 .row-meta {
   font-size: 11px;
   color: var(--muted);

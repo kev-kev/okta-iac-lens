@@ -4,8 +4,14 @@
 
 import { describe, expect, it } from "vitest";
 import { buildIndexes } from "../src/render/web/indexes.js";
+import type { GraphNode, OktaGraph } from "../src/core/model.js";
 import { graphFromFixture } from "./fixture.js";
 import { syntheticGraph } from "./synthetic.js";
+
+/** A bare Group node — enough to exercise name/id ranking. */
+function group(id: string, name: string): GraphNode {
+  return { id, kind: "Group", name, address: `okta_group.${id}` };
+}
 
 describe("buildIndexes (fixture)", () => {
   const graph = graphFromFixture();
@@ -26,6 +32,42 @@ describe("buildIndexes (fixture)", () => {
     expect(idx.search("git").map((n) => n.id)).toContain("a-gh");
     expect(idx.search("g-con").map((n) => n.name)).toContain("Contractors");
     expect(idx.search("")).toEqual([]);
+  });
+});
+
+describe("buildIndexes search ranking", () => {
+  // Query "eng" hits each of these at a different relevance tier.
+  const graph: OktaGraph = {
+    nodes: [
+      group("g-buried", "Avengers"), // "eng" buried mid-token (tier 3), longer name
+      group("g-sub", "Reng"), // "eng" mid-token (tier 3), shorter name
+      group("g-word", "Platform Engineers"), // a word starts with "eng" (tier 2)
+      group("g-prefix", "Engineering"), // name starts with "eng" (tier 1)
+      // id-only match: the name "Widgets" doesn't match, but the id does.
+      { id: "eng-team", kind: "Group", name: "Widgets", address: "okta_group.eng_team" },
+      group("g-exact", "eng"), // exact (tier 0)
+    ],
+    edges: [],
+  };
+  const idx = buildIndexes(graph);
+
+  it("orders exact › prefix › word-boundary › substring, with id-only matches last", () => {
+    expect(idx.search("eng").map((n) => n.id)).toEqual([
+      "g-exact", // 0 exact name
+      "g-prefix", // 1 name prefix
+      "g-word", // 2 word-boundary in name
+      "g-sub", // 3 name substring (shorter name sorts ahead of Avengers)
+      "g-buried", // 3 name substring
+      "eng-team", // id-only match, always after any name match
+    ]);
+  });
+
+  it("ranks a case-insensitive exact name match first", () => {
+    expect(idx.search("ENG")[0]?.id).toBe("g-exact");
+  });
+
+  it("respects the limit after ranking", () => {
+    expect(idx.search("eng", 2).map((n) => n.id)).toEqual(["g-exact", "g-prefix"]);
   });
 });
 
