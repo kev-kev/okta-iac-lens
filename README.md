@@ -52,6 +52,14 @@ current milestone.
   **SSWS token stays server-side** (never in the browser; the browser only computes the same pure
   `traceUser` the CLI uses). Opened as a static file with no server, the viewer is exactly as
   before: fully offline, file-open only.
+- **Policy outliers** (M10) — `outliers` (CLI) and a ranked table in the viewer surface apps whose
+  auth policy **diverges from their peers**, where peers = the apps granted to the same group
+  (same audience, so the weakest gate is that audience's effective exposure). An org-default app
+  among peers that are ≥2/3 behind a custom policy is flagged **weaker-than-peers**; custom-vs-custom
+  mismatches are **differs-from-peers** (relative strength unknown — the model deliberately carries
+  no policy contents, and the output says so). Every row carries its evidence: *"in Engineering
+  (11 apps): 9/11 peers behind Strict-Auth."* A hardened app among org-default peers is never
+  flagged — that's the expected crown-jewel pattern, not an outlier.
 
 ### Access-path viewer
 
@@ -128,6 +136,10 @@ npm run dev -- trace    --user  "ada@example.com" --app "GitHub" --source okta  
 # risk-ranked inventory: reach × gate strength × IaC status (widest/weakest/unmanaged first)
 npm run dev -- risk --source tfstate --state fixtures/sample-tenant.tfstate.json
 npm run dev -- risk --iac --state fixtures/sample-tenant.tfstate.json   # + IaC signal (live vs state)
+
+# policy outliers: apps diverging from their peer set's dominant auth policy
+npm run dev -- outliers --state fixtures/sample-tenant.tfstate.json
+npm run dev -- outliers --source okta                                   # live tenant
 
 # IaC coverage: live tenant vs Terraform state, with import blocks for the gap
 npm run dev -- coverage --state generated/seed-state.json --imports generated/imports.tf

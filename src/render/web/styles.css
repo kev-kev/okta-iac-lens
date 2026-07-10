@@ -382,6 +382,41 @@ body {
   box-shadow: inset 3px 0 0 var(--warn, #d98a2b);
 }
 
+/* --- M10: policy outliers ---------------------------------------------------- */
+.explorer-row.is-selected {
+  background: #0b1220;
+}
+.severity-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.severity-chip.is-weaker {
+  background: var(--bucket-unmanaged, #f59e0b);
+  color: #111827;
+}
+.severity-chip.is-differs {
+  background: var(--bucket-excluded, #64748b);
+  color: var(--text);
+}
+/* Header entry lights up when the loaded tenant actually has outliers. */
+.file-btn.has-outliers {
+  border-color: var(--warn, #d98a2b);
+}
+.outlier-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+/* Findings are sentences — undo the panel list's column-flex so inline <strong> stays inline. */
+.trace-apps li.outlier-finding {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
 .focus-view {
   flex: 1;
   min-height: 0;

@@ -13,6 +13,7 @@ import { explainUserApp, summarize, trace, traceApp, traceUser } from "./core/ac
 import { computeCoverage, slimCoverage } from "./analysis/coverage.js";
 import { generateImportBlocks } from "./analysis/import-blocks.js";
 import { rankRisk } from "./analysis/rank-risk.js";
+import { findPolicyOutliers } from "./analysis/policy-outliers.js";
 import {
   loadDotEnv,
   loadLiveResources,
@@ -22,6 +23,7 @@ import {
 import {
   renderAppTrace,
   renderCoverage,
+  renderOutliers,
   renderRisk,
   renderSummary,
   renderTrace,
@@ -160,6 +162,25 @@ program
       // Reach + gate only (single source); IaC shown as n/a.
       const graph = await loadGraph(opts);
       console.log(renderRisk(rankRisk(graph), format));
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("outliers")
+  .description(
+    "Find apps whose auth policy diverges from the dominant policy of their peer set (the apps granted to the same group). Compares WHICH policy applies, not policy contents.",
+  )
+  .addOption(sourceOption())
+  .option("--state <path>", "path to `terraform show -json` output (tfstate source)")
+  .option("--json", "output the full report as JSON (rows + evaluation stats)")
+  .action(async (opts: SourceOpts & { json?: boolean }) => {
+    try {
+      const graph = await loadGraph(opts);
+      const format: OutputFormat = opts.json ? "json" : "text";
+      console.log(renderOutliers(findPolicyOutliers(graph), format));
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

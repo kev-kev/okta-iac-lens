@@ -14,9 +14,10 @@ import { makeEnvelope } from "../src/render/envelope.js";
 
 const OUT = "generated/scale-envelope.json";
 
-// Default synthetic org: 10k groups + 5k apps (= the "15000 nodes" the viewer header shows),
+// Default synthetic org: 10k groups + 5k apps (= the "15000+ nodes" the viewer header shows),
 // 60k assignment edges, plus heavy-tail hubs (group 0 -> 800 apps) that exercise hub truncation.
-const graph = syntheticGraph();
+// M10: 20 auth policies over 80% of apps (skewed so dominants exist) exercise the outliers view.
+const graph = syntheticGraph({ authPolicies: 20, protectsShare: 0.8 });
 const envelope = makeEnvelope(graph, "okta", new Date().toISOString());
 
 mkdirSync("generated", { recursive: true });
