@@ -4,7 +4,9 @@
  * gate among them is the effective exposure for that audience).
  *
  * PURE — a consumer of the graph only. No I/O. Drives BOTH the `outliers` CLI command and the
- * viewer's outliers table (one analysis, two renderers), like rank-risk.
+ * viewer's outliers table (one analysis, two renderers), like rank-risk. The shared primitives
+ * (`buildPeerIndex`, `dominantPolicy`) also back the viewer's Group×Policy matrix so the two
+ * surfaces can never disagree about what "dominant" means.
  *
  * What "divergence" means here — and, deliberately, what it does NOT mean:
  *  - We compare WHICH auth policy applies, never policy CONTENTS. The model carries no rule /
@@ -76,6 +78,16 @@ export interface OutlierReport {
   minPeers: number;
 }
 
+/** The graph reduced to what outlier analysis needs, computed once. `policyByApp` maps an app id
+ * to its custom-policy id; an app absent from the map is org default (key `null` downstream). */
+export interface PeerIndex {
+  nodeById: Map<string, GraphNode>;
+  /** group id -> deduped set of granted app ids (the peer sets). */
+  appsByGroup: Map<string, Set<string>>;
+  /** app id -> custom auth policy id (first valid `protects` edge wins). */
+  policyByApp: Map<string, string>;
+}
+
 /** Add `to` to the set keyed by `from` — Set dedupes a repeated (group, app) grant to one. */
 function addToSet(map: Map<string, Set<string>>, key: string, value: string): void {
   let set = map.get(key);
@@ -84,15 +96,15 @@ function addToSet(map: Map<string, Set<string>>, key: string, value: string): vo
 }
 
 /**
- * Find every app that diverges from the dominant auth policy of at least one of its peer sets,
- * ranked by score desc → findingCount desc → name asc → id asc (deterministic).
+ * Build the peer sets + app→policy map + node index in single passes. Shared by the table and the
+ * matrix so both read the exact same peers and policies. Guards mirror rank-risk: a `grants` edge
+ * counts only Group→App between real nodes; a `protects` edge only if its policy node exists, and
+ * the FIRST such edge per app wins (pinned for determinism).
  */
-export function findPolicyOutliers(graph: OktaGraph): OutlierReport {
+export function buildPeerIndex(graph: OktaGraph): PeerIndex {
   const nodeById = new Map<string, GraphNode>();
   for (const n of graph.nodes) nodeById.set(n.id, n);
 
-  // Peer sets — deduped grants adjacency, counting only edges whose endpoints are real
-  // Group/App nodes (mirrors the viewer's indexes.ts guard; dangling ids can't become rows).
   const appsByGroup = new Map<string, Set<string>>();
   for (const e of graph.edges) {
     if (
@@ -104,14 +116,57 @@ export function findPolicyOutliers(graph: OktaGraph): OutlierReport {
     }
   }
 
-  // App -> auth policy. A `protects` edge counts only if its policy node exists (rank-risk's
-  // guard); with duplicates, the FIRST edge wins — pinned for determinism.
   const policyByApp = new Map<string, string>();
   for (const e of graph.edges) {
     if (e.kind === "protects" && nodeById.get(e.from)?.kind === "AppAuthPolicy" && !policyByApp.has(e.to)) {
       policyByApp.set(e.to, e.from);
     }
   }
+
+  return { nodeById, appsByGroup, policyByApp };
+}
+
+/** The policy-key breakdown of a peer set; `null` key = org default. */
+export function policyCounts(peers: Set<string>, policyByApp: Map<string, string>): Map<string | null, number> {
+  const counts = new Map<string | null, number>();
+  for (const appId of peers) {
+    const key = policyByApp.get(appId) ?? null;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * The dominant policy of a peer set: the UNIQUE mode covering ≥ 2/3 of `peerSize` (integer-safe).
+ * A tie for the mode, or a mode below 2/3, means no dominant → `null`. The key may itself be
+ * `null` (org default is the dominant), which the caller distinguishes from "no dominant".
+ */
+export function dominantPolicy(
+  counts: Map<string | null, number>,
+  peerSize: number,
+): { key: string | null; count: number } | null {
+  let modeKey: string | null = null;
+  let modeCount = 0;
+  let tied = false;
+  for (const [key, count] of counts) {
+    if (count > modeCount) {
+      modeKey = key;
+      modeCount = count;
+      tied = false;
+    } else if (count === modeCount) {
+      tied = true;
+    }
+  }
+  if (tied || 3 * modeCount < 2 * peerSize) return null;
+  return { key: modeKey, count: modeCount };
+}
+
+/**
+ * Find every app that diverges from the dominant auth policy of at least one of its peer sets,
+ * ranked by score desc → findingCount desc → name asc → id asc (deterministic).
+ */
+export function findPolicyOutliers(graph: OktaGraph): OutlierReport {
+  const { nodeById, appsByGroup, policyByApp } = buildPeerIndex(graph);
 
   let groupsEvaluated = 0;
   let groupsWithDominant = 0;
@@ -122,51 +177,32 @@ export function findPolicyOutliers(graph: OktaGraph): OutlierReport {
     if (peers.size < MIN_PEERS) continue;
     groupsEvaluated++;
 
-    // Count peers per policy key; `null` (a valid Map key) = org default.
-    const counts = new Map<string | null, number>();
-    for (const appId of peers) {
-      const key = policyByApp.get(appId) ?? null;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-
-    // Unique mode covering ≥ 2/3 of peers (integer-safe). A tie means no dominant.
-    let modeKey: string | null = null;
-    let modeCount = 0;
-    let tied = false;
-    for (const [key, count] of counts) {
-      if (count > modeCount) {
-        modeKey = key;
-        modeCount = count;
-        tied = false;
-      } else if (count === modeCount) {
-        tied = true;
-      }
-    }
-    if (tied || 3 * modeCount < 2 * peers.size) continue;
+    const dominant = dominantPolicy(policyCounts(peers, policyByApp), peers.size);
+    if (!dominant) continue;
     groupsWithDominant++;
 
     // Org-default dominant flags nothing: a custom-gated app among default peers is the
     // crown-jewel pattern, not an outlier (see module header).
-    if (modeKey === null) continue;
+    if (dominant.key === null) continue;
 
     const groupName = nodeById.get(groupId)?.name ?? groupId;
-    const dominantPolicyName = nodeById.get(modeKey)?.name ?? modeKey;
+    const dominantPolicyName = nodeById.get(dominant.key)?.name ?? dominant.key;
     for (const appId of peers) {
       const appKey = policyByApp.get(appId) ?? null;
-      if (appKey === modeKey) continue;
+      if (appKey === dominant.key) continue;
       const severity: OutlierSeverity = appKey === null ? "weaker-than-peers" : "differs-from-peers";
       const finding: OutlierFinding = {
         groupId,
         groupName,
         peerCount: peers.size,
-        dominantPolicyId: modeKey,
+        dominantPolicyId: dominant.key,
         dominantPolicyName,
-        dominantCount: modeCount,
+        dominantCount: dominant.count,
         severity,
       };
       let entry = acc.get(appId);
       if (!entry) acc.set(appId, (entry = { score: 0, severity, findings: [] }));
-      entry.score += (severity === "weaker-than-peers" ? WEAKER_MULT : DIFFERS_MULT) * modeCount;
+      entry.score += (severity === "weaker-than-peers" ? WEAKER_MULT : DIFFERS_MULT) * dominant.count;
       if (severity === "weaker-than-peers") entry.severity = "weaker-than-peers";
       entry.findings.push(finding);
     }

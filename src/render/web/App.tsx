@@ -370,9 +370,11 @@ export function App() {
           showLabels={showLabels}
           onBack={() => setUserTrace(null)}
         />
-      ) : showOutliers && outliers ? (
+      ) : showOutliers && outliers && indexes ? (
         <OutliersView
           report={outliers}
+          graph={graph}
+          indexes={indexes}
           onBack={() => setShowOutliers(false)}
           onOpenApp={openAppFromOutliers}
         />

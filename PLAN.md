@@ -36,8 +36,9 @@ Read alongside `CLAUDE.md` (durable context). This file is the current, disposab
 - [ ] User applies the seed (needs write token, see seed header); then `outliers --source okta` must flag GitHub — match against the admin console.
 - [ ] README section; PR; merge to `main`.
 
-### Phase E — stretch heatmap (may slip; skipping removes 2 files + 1 toggle)
-- [ ] `outlier-matrix.ts` (pure): Group×Policy matrix, **bounded** ≤8 columns (top-6 policies + org default + other), top-30 rows + "…N more". `OutlierMatrix.tsx`: Table|Matrix toggle; cell click → `CohortList` drill-in.
+### Phase E — stretch heatmap ✅
+- [x] `outlier-matrix.ts` (pure): Group×Policy matrix, **bounded** ≤8 columns (top-6 policies + Other + Org default), top-30 rows + `hiddenRowCount`, cell app-sample capped at 50. Shares `buildPeerIndex`/`dominantPolicy`/`policyCounts` with the analysis (extracted from `findPolicyOutliers`, behavior unchanged) so the dominant cell + severity never disagree with the table. +5 tests.
+- [x] `OutlierMatrix.tsx`: Table|Matrix toggle in `OutliersView`; heat = policy share, dominant cell outlined, weaker/differs tinted; cell click → `CohortList` drill-in (verbatim reuse). Verified live (Playwright): 8 columns, 30 rows, dominant/weaker/differs cells correct on the 15k-node synthetic org; drill-in lists a cell's apps. 168 tests total; `web:typecheck`/`web:build` clean.
 
 ## Deferred (do NOT build in M10) → later
 

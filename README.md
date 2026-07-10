@@ -59,7 +59,10 @@ current milestone.
   mismatches are **differs-from-peers** (relative strength unknown — the model deliberately carries
   no policy contents, and the output says so). Every row carries its evidence: *"in Engineering
   (11 apps): 9/11 peers behind Strict-Auth."* A hardened app among org-default peers is never
-  flagged — that's the expected crown-jewel pattern, not an outlier.
+  flagged — that's the expected crown-jewel pattern, not an outlier. The viewer adds a bounded
+  **Group×Policy heatmap** (top policies + Other + Org default as columns, biggest audiences as
+  rows) where the dominant cell is outlined and divergent cells are tinted; click a cell to list
+  its apps.
 
 ### Access-path viewer
 

@@ -1,25 +1,54 @@
 /**
- * OutliersView — the policy-outlier table (M10). One component for small AND large tenants: a
- * ranked, virtualized table is scale-independent, so there is no size fork. Rows are the pure
- * `findPolicyOutliers` output (same analysis the CLI renders); clicking a row opens its evidence
- * panel, and from there the app can be opened in the graph.
+ * OutliersView — the policy-outlier surface (M10). One component for small AND large tenants: a
+ * ranked table (default) plus a Group×Policy heatmap toggle, both scale-independent. Rows/cells
+ * come from the pure `findPolicyOutliers` / `buildOutlierMatrix` (the same analysis the CLI uses).
+ * Table row → evidence panel → open app in graph; matrix cell → CohortList of its apps → focus.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { OktaGraph } from "../../core/model.js";
 import type { OutlierReport } from "../../analysis/policy-outliers.js";
+import type { GraphIndexes } from "./indexes.js";
+import { buildOutlierMatrix } from "./outlier-matrix.js";
 import { VirtualList } from "./VirtualList.js";
 import { OutlierDetailPanel } from "./OutlierDetailPanel.js";
+import { OutlierMatrix } from "./OutlierMatrix.js";
+import { CohortList } from "./CohortList.js";
 
 export function OutliersView({
   report,
+  graph,
+  indexes,
   onBack,
   onOpenApp,
 }: {
   report: OutlierReport;
+  graph: OktaGraph;
+  indexes: GraphIndexes;
   onBack: () => void;
   onOpenApp: (appId: string) => void;
 }) {
+  const [mode, setMode] = useState<"table" | "matrix">("table");
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [drill, setDrill] = useState<{ label: string; appIds: string[] } | null>(null);
+
   const selected = report.rows.find((r) => r.appId === selectedAppId) ?? null;
+  const matrix = useMemo(() => (mode === "matrix" ? buildOutlierMatrix(graph) : null), [mode, graph]);
+  const hasEvaluated = report.groupsEvaluated > 0;
+
+  // A clicked matrix cell drills into its apps, reusing the same list the cohort overview uses.
+  if (drill) {
+    return (
+      <div className="explorer">
+        <CohortList
+          label={drill.label}
+          memberIds={drill.appIds}
+          indexes={indexes}
+          onFocus={onOpenApp}
+          onBack={() => setDrill(null)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="explorer">
@@ -34,14 +63,36 @@ export function OutliersView({
             group{report.groupsEvaluated === 1 ? "" : "s"} (≥{report.minPeers} apps),{" "}
             {report.groupsWithDominant} with a dominant policy
           </span>
+          {hasEvaluated && (
+            <span className="sort-toggle">
+              <button
+                type="button"
+                className={`sort-opt${mode === "table" ? " is-active" : ""}`}
+                onClick={() => setMode("table")}
+              >
+                Table
+              </button>
+              <button
+                type="button"
+                className={`sort-opt${mode === "matrix" ? " is-active" : ""}`}
+                onClick={() => setMode("matrix")}
+              >
+                Matrix
+              </button>
+            </span>
+          )}
         </div>
-        {report.rows.length === 0 ? (
+
+        {mode === "matrix" && matrix ? (
+          <OutlierMatrix matrix={matrix} onOpenCell={(label, appIds) => setDrill({ label, appIds })} />
+        ) : report.rows.length === 0 ? (
           <div className="dropzone">
             <p>No outliers.</p>
             <p className="hint">
               {report.groupsEvaluated === 0
                 ? `No group grants ${report.minPeers} or more apps, so there are no peer sets to compare.`
                 : `Evaluated ${report.groupsEvaluated} peer group${report.groupsEvaluated === 1 ? "" : "s"} with ≥${report.minPeers} granted apps; ${report.groupsWithDominant} had a dominant auth policy and every app conformed to it.`}
+              {hasEvaluated && " Switch to Matrix to see the policy distribution."}
             </p>
           </div>
         ) : (
@@ -77,7 +128,7 @@ export function OutliersView({
           </>
         )}
       </div>
-      {selected && <OutlierDetailPanel row={selected} onOpenApp={onOpenApp} />}
+      {mode === "table" && selected && <OutlierDetailPanel row={selected} onOpenApp={onOpenApp} />}
     </div>
   );
 }
