@@ -69,6 +69,18 @@ resource "okta_app_oauth" "datadog" {
   authentication_policy = okta_app_signon_policy.strict_auth.id
 }
 
+# M10 ground truth: a third Engineering app behind Strict-Auth makes the peer set
+# {GitHub, Datadog, Wiki} with a 2/3 Strict-Auth dominant — so GitHub (org default)
+# is a genuine weaker-than-peers outlier, verifiable in the admin console.
+resource "okta_app_oauth" "wiki" {
+  label          = "Wiki"
+  type           = "web"
+  grant_types    = ["authorization_code"]
+  redirect_uris  = ["https://example.com/callback"]
+  response_types = ["code"]
+  authentication_policy = okta_app_signon_policy.strict_auth.id
+}
+
 # --- App-to-group assignments ------------------------------------------------
 resource "okta_app_group_assignment" "gh_eng" {
   app_id   = okta_app_oauth.github.id
@@ -83,6 +95,11 @@ resource "okta_app_group_assignment" "dd_eng" {
 resource "okta_app_group_assignment" "gh_con" {
   app_id   = okta_app_oauth.github.id
   group_id = okta_group.contractors.id
+}
+
+resource "okta_app_group_assignment" "wiki_eng" {
+  app_id   = okta_app_oauth.wiki.id
+  group_id = okta_group.engineering.id
 }
 
 # --- Group rule: department == "Engineering" populates Engineering -----------

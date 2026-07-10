@@ -15,6 +15,7 @@ import type {
 } from "../core/access-paths.js";
 import type { CoverageBucket, CoverageReport } from "../analysis/coverage.js";
 import type { RiskRow } from "../analysis/rank-risk.js";
+import type { OutlierReport } from "../analysis/policy-outliers.js";
 import { recommend } from "../analysis/recommendations.js";
 
 export type OutputFormat = "text" | "json";
@@ -207,6 +208,55 @@ export function renderRisk(rows: RiskRow[], format: OutputFormat): string {
         `${r.score}`,
     );
   });
+  return lines.join("\n");
+}
+
+export function renderOutliers(report: OutlierReport, format: OutputFormat): string {
+  if (format === "json") return JSON.stringify(report, null, 2);
+
+  const lines: string[] = [];
+  lines.push("Policy outliers — apps diverging from their peer set's dominant auth policy");
+  lines.push(
+    `(peer set = apps granted to the same group; dominant = a unique policy covering >=2/3 of >=${report.minPeers} peers)`,
+  );
+  lines.push("");
+
+  if (report.rows.length === 0) {
+    lines.push("  (no outliers)");
+  } else {
+    lines.push(
+      "  " + "#".padStart(3) + "  " + "app".padEnd(24) + "policy".padEnd(16) +
+        "severity".padEnd(20) + "groups".padStart(6) + "  score",
+    );
+    report.rows.forEach((r, i) => {
+      lines.push(
+        "  " +
+          `${i + 1}`.padStart(3) + "  " +
+          r.appName.slice(0, 23).padEnd(24) +
+          (r.appPolicyName ?? "org default").slice(0, 15).padEnd(16) +
+          r.severity.padEnd(20) +
+          `${r.findingCount}`.padStart(6) + "  " +
+          `${r.score}`,
+      );
+      for (const f of r.findings) {
+        lines.push(
+          `         - in ${f.groupName} (${f.peerCount} apps): ${f.dominantCount}/${f.peerCount} peers behind ${f.dominantPolicyName}`,
+        );
+      }
+      if (r.findingCount > r.findings.length) {
+        lines.push(`         …and ${r.findingCount - r.findings.length} more peer group(s)`);
+      }
+    });
+  }
+
+  lines.push("");
+  lines.push(
+    `Evaluated ${report.groupsEvaluated} peer group(s); ${report.groupsWithDominant} had a dominant policy.`,
+  );
+  lines.push(
+    "Note: divergence compares WHICH policy applies, not policy contents — custom-vs-custom",
+  );
+  lines.push("mismatches may be intentional. Policy rule strength is not evaluated.");
   return lines.join("\n");
 }
 

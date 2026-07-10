@@ -27,6 +27,11 @@ export interface SyntheticOptions {
   hubGroupFanout?: number;
   /** Inject an app granted by this many groups (a hub). Default 400. */
   hubAppFanin?: number;
+  /** Add this many AppAuthPolicy nodes (`p0`..). Default 0 — existing counts unchanged. */
+  authPolicies?: number;
+  /** Share of apps (0..1) given a seeded `protects` edge, skewed ~70% toward `p0` so peer sets
+   * have dominant policies. Default 0. Requires `authPolicies` > 0 to have any effect. */
+  protectsShare?: number;
 }
 
 /** Build a synthetic org: `groups` + `apps` nodes, `assignments` grants edges, plus two hubs. */
@@ -63,6 +68,21 @@ export function syntheticGraph(options: SyntheticOptions = {}): OktaGraph {
   let guard = nAssign * 4;
   while (edges.length < nAssign && guard-- > 0) {
     grant(Math.floor(rand() * nGroups), Math.floor(rand() * nApps));
+  }
+
+  // Optional auth-policy layer (off by default so existing scale tests keep their exact counts):
+  // `protectsShare` of apps get one `protects` edge, skewed toward p0 so dominants exist.
+  const nPolicies = options.authPolicies ?? 0;
+  const protectsShare = options.protectsShare ?? 0;
+  if (nPolicies > 0 && protectsShare > 0) {
+    for (let i = 0; i < nPolicies; i++) {
+      nodes.push({ kind: "AppAuthPolicy", id: `p${i}`, name: `Policy ${i}`, address: "x" });
+    }
+    for (let i = 0; i < nApps; i++) {
+      if (rand() >= protectsShare) continue;
+      const p = nPolicies === 1 || rand() < 0.7 ? 0 : 1 + Math.floor(rand() * (nPolicies - 1));
+      edges.push({ kind: "protects", from: `p${p}`, to: `a${i}` });
+    }
   }
 
   return { nodes, edges };

@@ -29,6 +29,8 @@ import { CohortList } from "./CohortList.js";
 import { VirtualList } from "./VirtualList.js";
 import { UserTraceView } from "./UserTraceView.js";
 import { HighlightedText } from "./HighlightedText.js";
+import { findPolicyOutliers } from "../../analysis/policy-outliers.js";
+import { OutliersView } from "./OutliersView.js";
 
 type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
 
@@ -47,6 +49,8 @@ export function App() {
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
   const [userLogin, setUserLogin] = useState("");
   const [userTrace, setUserTrace] = useState<UserTraceResult | null>(null);
+  // M10: the policy-outliers table (recomputed pure from the graph, like rankRisk in Explorer).
+  const [showOutliers, setShowOutliers] = useState(false);
   const [liveBusy, setLiveBusy] = useState(false);
   // Latest graph, readable from the async user-trace callback without re-creating it each render.
   const graphRef = useRef<OktaGraph | null>(null);
@@ -82,6 +86,7 @@ export function App() {
     setCohortId(null);
     setBrowseAll(false);
     setUserTrace(null);
+    setShowOutliers(false);
     setQuery("");
     setError(null);
   }, [setFocusId]);
@@ -203,6 +208,24 @@ export function App() {
   const isLarge = (graph?.nodes.length ?? 0) > AUTO_THRESHOLD;
   const indexes = useMemo(() => (graph ? buildIndexes(graph) : null), [graph]);
 
+  // M10: policy outliers, recomputed in-browser from the graph (no envelope change).
+  const outliers = useMemo(() => (graph ? findPolicyOutliers(graph) : null), [graph]);
+  /** From the outlier panel into the graph: large → depth-1 focus; small → the policy's sharing view. */
+  const openAppFromOutliers = useCallback(
+    (appId: string) => {
+      setShowOutliers(false);
+      if (isLarge) {
+        setFocusId(appId);
+        return;
+      }
+      // Small canvas has no per-app highlight primitive; lighting the app's policy cohort via the
+      // existing policy-sharing view is the closest orientation. Org-default apps just return.
+      const policyId = outliers?.rows.find((r) => r.appId === appId)?.appPolicyId ?? null;
+      if (policyId) setSelection({ kind: "policy", id: policyId });
+    },
+    [isLarge, outliers, setFocusId],
+  );
+
   // Viewport-adaptive per-side neighbor cap: how many cards fit the canvas height, clamped.
   const perSideCap = useMemo(() => {
     const rowPx = 96; // ~card height + gap
@@ -296,6 +319,15 @@ export function App() {
                 onChange={(e) => setQuery(e.target.value)}
               />
             )}
+            {outliers && (
+              <button
+                type="button"
+                className={`file-btn${outliers.rows.length > 0 ? " has-outliers" : ""}`}
+                onClick={() => setShowOutliers(true)}
+              >
+                Policy outliers ({outliers.rows.length})
+              </button>
+            )}
             {coverage && (
               <label className="toggle">
                 <input
@@ -337,6 +369,14 @@ export function App() {
           result={userTrace}
           showLabels={showLabels}
           onBack={() => setUserTrace(null)}
+        />
+      ) : showOutliers && outliers && indexes ? (
+        <OutliersView
+          report={outliers}
+          graph={graph}
+          indexes={indexes}
+          onBack={() => setShowOutliers(false)}
+          onOpenApp={openAppFromOutliers}
         />
       ) : isLarge ? (
         searchResults ? (

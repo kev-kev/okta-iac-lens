@@ -382,6 +382,123 @@ body {
   box-shadow: inset 3px 0 0 var(--warn, #d98a2b);
 }
 
+/* --- M10: policy outliers ---------------------------------------------------- */
+.explorer-row.is-selected {
+  background: #0b1220;
+}
+.severity-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.severity-chip.is-weaker {
+  background: var(--bucket-unmanaged, #f59e0b);
+  color: #111827;
+}
+.severity-chip.is-differs {
+  background: var(--bucket-excluded, #64748b);
+  color: var(--text);
+}
+/* Header entry lights up when the loaded tenant actually has outliers. */
+.file-btn.has-outliers {
+  border-color: var(--warn, #d98a2b);
+}
+.outlier-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+/* Findings are sentences — undo the panel list's column-flex so inline <strong> stays inline. */
+.trace-apps li.outlier-finding {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* --- M10 stretch: Group×Policy heatmap ------------------------------------- */
+.matrix-wrap {
+  overflow-x: auto;
+  padding-top: 6px;
+}
+.matrix {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.matrix th,
+.matrix td {
+  border: 1px solid var(--border);
+}
+.matrix-col,
+.matrix-corner {
+  padding: 6px 8px;
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.matrix-col.is-synthetic {
+  font-style: italic;
+}
+.matrix-row-head {
+  padding: 4px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  position: sticky;
+  left: 0;
+  background: var(--bg);
+}
+.matrix-peer {
+  color: var(--muted);
+  font-weight: 400;
+}
+.matrix-cell {
+  width: 56px;
+  height: 34px;
+  text-align: center;
+  color: var(--text);
+}
+.matrix-cell.is-empty {
+  color: var(--border);
+}
+.matrix-cell.is-clickable {
+  cursor: pointer;
+}
+.matrix-cell.is-dominant {
+  outline: 2px solid var(--text);
+  outline-offset: -3px;
+  font-weight: 700;
+}
+/* Legend swatches inline in the caption. */
+.matrix-key {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  background: rgba(37, 99, 235, 0.55);
+}
+.matrix-key.is-dominant {
+  background: transparent;
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+.matrix-key.sev-weaker-than-peers {
+  background: rgba(245, 158, 11, 0.7);
+}
+.matrix-key.sev-differs-from-peers {
+  background: rgba(148, 163, 184, 0.7);
+}
+
 .focus-view {
   flex: 1;
   min-height: 0;
