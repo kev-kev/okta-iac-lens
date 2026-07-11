@@ -88,7 +88,9 @@ function sanitize(raw: string): string {
 }
 
 function readText(url: URL): string {
-  return readFileSync(url, "utf8");
+  // Strip a leading UTF-8 BOM — `terraform show -json | Out-File -Encoding utf8`
+  // on Windows PowerShell 5.1 prepends one, which would break JSON.parse.
+  return readFileSync(url, "utf8").replace(/^﻿/, "");
 }
 
 function main(): void {

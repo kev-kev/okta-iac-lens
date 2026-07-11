@@ -431,7 +431,7 @@
     "name": "oidc_client",
     "label": "Confluence",
     "status": "ACTIVE",
-    "lastUpdated": "2026-07-11T01:15:06.000Z",
+    "lastUpdated": "2026-07-11T18:20:12.000Z",
     "created": "2026-07-11T01:15:05.000Z",
     "accessibility": {
       "selfService": false,
@@ -557,7 +557,7 @@
         }
       ],
       "accessPolicy": {
-        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst16ffbd575c05d891c"
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst12872f333b6350610"
       },
       "users": {
         "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1fc75b2ea21c8e0dd/users"

@@ -73,7 +73,7 @@ Two findings sets drive M11–M15:
 ### Phase C — capture + ground truth (read-only token)
 - [x] `npm run smoke` → sanitize `generated/okta-captures/` → commit as `fixtures/api-real/` (structure-true, fake values). Keep the idealized `fixtures/api/` for the existing unit oracles. *Done via `scripts/sanitize-captures.ts` (committed, auditable, no secrets): one shared id map across the 6 captures + the state so an id means the same thing on both paths; scrubs org subdomain, Okta ids, signing `kid`, and the 5 real `client_secret`s; a leak guard fails the run if any real value survives. Names/labels were already seed-synthetic.*
 - [x] Sanitize the state export the same way and commit it (needs a second explicit `.gitignore` exception, like the sample fixture). *Committed at `fixtures/api-real/tenant.tfstate.json` with its own `!`-exception; the RAW `fixtures/real-tenant.tfstate.json` stays gitignored.*
-- [~] **M10 leftover:** `outliers --source okta` flags GitHub weaker-than-peers; matches the admin console. **Seed collision found + FIXED in `seed/main.tf` (Confluence now behind Strict-Auth → Engineering 3/4 Strict-Auth-dominant → GitHub flags again). Pending the human re-apply loop below, then re-verify.**
+- [x] **M10 leftover:** `outliers --source okta` flags GitHub weaker-than-peers; matches the admin console. **GREEN after the seed fix + re-apply (2026-07-11):** live output is `GitHub — org default — weaker-than-peers — in Engineering (4 apps): 3/4 peers behind Strict-Auth`. Fixtures regenerated.
 - [x] Record the console's answers (API-derived below; **human confirms against the admin console**): the test user's full app list (incl. the individual assignment), the effective session policy for an Engineering user, the INACTIVE rule's effect, and which built-in apps appear in `/api/v1/apps`.
 
 #### Phase C ground-truth record (from the sanitized captures @ 2026-07-10; console-confirm the ✎ rows)
@@ -87,9 +87,9 @@ Seed applied (Phase B done): live shows the INACTIVE `inactive-contractor-rule`,
 | INACTIVE `inactive-contractor-rule` effect | Okta evaluates it as **nothing** (populates no one) ✎ | parser ignores `status` → phantom `populates` edge to Contractors | INACTIVE treated as active (M12) |
 | Built-in apps in `/api/v1/apps` | capture returned **only the 5 managed OIDC apps — no built-in Okta apps** (Admin Console/Dashboard/Browser Plugin appear only as `ACCESS_POLICY` objects, not as apps) ✎ | n/a | "built-ins reported as gaps" may **not** reproduce in this tenant — verify in console before writing that Phase D red (M14) |
 
-#### M10 outlier collision — FIXED in seed, pending re-apply
+#### M10 outlier collision — RESOLVED (seed fix + re-apply, 2026-07-11)
 
-> **Decision (2026-07-10):** fix the seed + re-apply (chosen over recording as not-reproduced). `seed/main.tf` now puts Confluence behind Strict-Auth. **Human re-apply loop to green this:** `cd seed && terraform apply` → `terraform show -json > ../fixtures/real-tenant.tfstate.json` → re-add the click-ops Contractors group to Confluence in the console → `npm run smoke` (read-only) → `npx tsx scripts/sanitize-captures.ts` → re-run `npm run dev -- outliers --source okta` and confirm GitHub is flagged weaker-than-peers. Then commit the regenerated `fixtures/api-real/*`.
+> **Decision (2026-07-10):** fix the seed + re-apply (chosen over recording as not-reproduced). `seed/main.tf` now puts Confluence behind Strict-Auth; the human re-applied, re-exported, and re-added the click-ops Contractors group; fixtures were regenerated. `outliers --source okta` now flags GitHub (3/4 Strict-Auth-dominant Engineering peer set). Green.
 
 Original diagnosis (deterministic, reproduced from the pre-fix fixtures):
 
