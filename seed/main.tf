@@ -74,9 +74,12 @@ resource "okta_app_oauth" "datadog" {
   authentication_policy = okta_app_signon_policy.strict_auth.id
 }
 
-# M10 ground truth: a third Engineering app behind Strict-Auth makes the peer set
-# {GitHub, Datadog, Wiki} with a 2/3 Strict-Auth dominant — so GitHub (org default)
-# is a genuine weaker-than-peers outlier, verifiable in the admin console.
+# M10 ground truth: the other Engineering apps (Datadog, Wiki, and Confluence in
+# construct (4) below) all sit behind Strict-Auth, so the peer set
+# {GitHub, Datadog, Wiki, Confluence} is 3/4 Strict-Auth-dominant — GitHub (org
+# default) is a genuine weaker-than-peers outlier, verifiable in the admin console.
+# (Confluence MUST keep its Strict-Auth policy or the peer set ties 2-2 and the
+# outlier vanishes — see the note on construct (4).)
 resource "okta_app_oauth" "wiki" {
   label          = "Wiki"
   type           = "web"
@@ -202,6 +205,11 @@ resource "okta_app_oauth" "confluence" {
   grant_types    = ["authorization_code"]
   redirect_uris  = ["https://example.com/callback"]
   response_types = ["code"]
+  # Behind Strict-Auth (like Datadog/Wiki) so Confluence's presence in Engineering
+  # does NOT dilute the peer set: Engineering stays 3/4 Strict-Auth-dominant and
+  # GitHub (org default) remains the M10 weaker-than-peers outlier. Without this,
+  # Confluence at org-default ties Engineering 2-2 and the outlier disappears.
+  authentication_policy = okta_app_signon_policy.strict_auth.id
 }
 
 resource "okta_app_group_assignments" "confluence_groups" {
