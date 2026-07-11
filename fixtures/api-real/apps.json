@@ -1,0 +1,712 @@
+[
+  {
+    "id": "0oa1e38e713bbc45fc05",
+    "orn": "orn:okta:idp:00o12f9ba965d0ff7aa3:apps:oidc_client:0oa1e38e713bbc45fc05",
+    "name": "oidc_client",
+    "label": "Datadog",
+    "status": "ACTIVE",
+    "lastUpdated": "2026-07-02T14:39:46.000Z",
+    "created": "2026-07-02T14:39:45.000Z",
+    "accessibility": {
+      "selfService": false,
+      "errorRedirectUrl": null,
+      "loginRedirectUrl": null
+    },
+    "visibility": {
+      "autoLaunch": false,
+      "autoSubmitToolbar": false,
+      "hide": {
+        "iOS": true,
+        "web": true
+      },
+      "appLinks": {
+        "oidc_client_link": true
+      }
+    },
+    "features": [],
+    "signOnMode": "OPENID_CONNECT",
+    "credentials": {
+      "userNameTemplate": {
+        "template": "${source.login}",
+        "type": "BUILT_IN"
+      },
+      "signing": {
+        "kid": "sanitized-kid-0000000000000000000000000000"
+      },
+      "oauthClient": {
+        "autoKeyRotation": true,
+        "client_id": "0oa1e38e713bbc45fc05",
+        "token_endpoint_auth_method": "client_secret_basic",
+        "pkce_required": false
+      }
+    },
+    "universalLogout": {
+      "status": "DISABLED",
+      "supportType": "FULL",
+      "identityStack": "NOT_SHARED",
+      "protocol": "GLOBAL_TOKEN_REVOCATION"
+    },
+    "settings": {
+      "app": {},
+      "notifications": {
+        "vpn": {
+          "network": {
+            "connection": "DISABLED"
+          },
+          "message": null,
+          "helpUrl": null
+        }
+      },
+      "manualProvisioning": false,
+      "implicitAssignment": false,
+      "emOptInStatus": "NONE",
+      "notes": {
+        "admin": null,
+        "enduser": null
+      },
+      "oauthClient": {
+        "client_uri": null,
+        "logo_uri": null,
+        "redirect_uris": [
+          "https://example.com/callback"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "grant_types": [
+          "authorization_code"
+        ],
+        "application_type": "web",
+        "consent_method": "TRUSTED",
+        "issuer_mode": "ORG_URL",
+        "idp_initiated_login": {
+          "mode": "DISABLED",
+          "default_scope": []
+        },
+        "wildcard_redirect": "DISABLED",
+        "dpop_bound_access_tokens": false
+      }
+    },
+    "_links": {
+      "uploadLogo": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1e38e713bbc45fc05/logo",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      },
+      "appLinks": [
+        {
+          "name": "oidc_client_link",
+          "href": "https://integrator-0000000.okta.com/home/oidc_client/0oa1e38e713bbc45fc05/aln13b75fa4ab3f78968",
+          "type": "text/html"
+        }
+      ],
+      "profileEnrollment": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ccd89a47e34b4cba"
+      },
+      "policies": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1e38e713bbc45fc05/policies",
+        "hints": {
+          "allow": [
+            "PUT"
+          ]
+        }
+      },
+      "groups": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1e38e713bbc45fc05/groups"
+      },
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/default.6770228fb0dab49a1695ef440a5279bb.png",
+          "type": "image/png"
+        }
+      ],
+      "clientCredentials": [
+        {
+          "name": "secrets",
+          "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1e38e713bbc45fc05/credentials/secrets"
+        }
+      ],
+      "accessPolicy": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst12872f333b6350610"
+      },
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1e38e713bbc45fc05/users"
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1e38e713bbc45fc05/lifecycle/deactivate"
+      }
+    }
+  },
+  {
+    "id": "0oa148588a10019941c8",
+    "orn": "orn:okta:idp:00o12f9ba965d0ff7aa3:apps:oidc_client:0oa148588a10019941c8",
+    "name": "oidc_client",
+    "label": "GitHub",
+    "status": "ACTIVE",
+    "lastUpdated": "2026-07-02T14:39:45.000Z",
+    "created": "2026-07-02T14:39:45.000Z",
+    "accessibility": {
+      "selfService": false,
+      "errorRedirectUrl": null,
+      "loginRedirectUrl": null
+    },
+    "visibility": {
+      "autoLaunch": false,
+      "autoSubmitToolbar": false,
+      "hide": {
+        "iOS": true,
+        "web": true
+      },
+      "appLinks": {
+        "oidc_client_link": true
+      }
+    },
+    "features": [],
+    "signOnMode": "OPENID_CONNECT",
+    "credentials": {
+      "userNameTemplate": {
+        "template": "${source.login}",
+        "type": "BUILT_IN"
+      },
+      "signing": {
+        "kid": "sanitized-kid-0000000000000000000000000000"
+      },
+      "oauthClient": {
+        "autoKeyRotation": true,
+        "client_id": "0oa148588a10019941c8",
+        "token_endpoint_auth_method": "client_secret_basic",
+        "pkce_required": false
+      }
+    },
+    "universalLogout": {
+      "status": "DISABLED",
+      "supportType": "FULL",
+      "identityStack": "NOT_SHARED",
+      "protocol": "GLOBAL_TOKEN_REVOCATION"
+    },
+    "settings": {
+      "app": {},
+      "notifications": {
+        "vpn": {
+          "network": {
+            "connection": "DISABLED"
+          },
+          "message": null,
+          "helpUrl": null
+        }
+      },
+      "manualProvisioning": false,
+      "implicitAssignment": false,
+      "emOptInStatus": "NONE",
+      "notes": {
+        "admin": null,
+        "enduser": null
+      },
+      "oauthClient": {
+        "client_uri": null,
+        "logo_uri": null,
+        "redirect_uris": [
+          "https://example.com/callback"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "grant_types": [
+          "authorization_code"
+        ],
+        "application_type": "web",
+        "consent_method": "TRUSTED",
+        "issuer_mode": "ORG_URL",
+        "idp_initiated_login": {
+          "mode": "DISABLED",
+          "default_scope": []
+        },
+        "wildcard_redirect": "DISABLED",
+        "dpop_bound_access_tokens": false
+      }
+    },
+    "_links": {
+      "uploadLogo": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa148588a10019941c8/logo",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      },
+      "appLinks": [
+        {
+          "name": "oidc_client_link",
+          "href": "https://integrator-0000000.okta.com/home/oidc_client/0oa148588a10019941c8/aln13b75fa4ab3f78968",
+          "type": "text/html"
+        }
+      ],
+      "profileEnrollment": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ccd89a47e34b4cba"
+      },
+      "policies": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa148588a10019941c8/policies",
+        "hints": {
+          "allow": [
+            "PUT"
+          ]
+        }
+      },
+      "groups": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa148588a10019941c8/groups"
+      },
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/default.6770228fb0dab49a1695ef440a5279bb.png",
+          "type": "image/png"
+        }
+      ],
+      "clientCredentials": [
+        {
+          "name": "secrets",
+          "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa148588a10019941c8/credentials/secrets"
+        }
+      ],
+      "accessPolicy": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst16ffbd575c05d891c"
+      },
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa148588a10019941c8/users"
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa148588a10019941c8/lifecycle/deactivate"
+      }
+    }
+  },
+  {
+    "id": "0oa1963f00980866ca6b",
+    "orn": "orn:okta:idp:00o12f9ba965d0ff7aa3:apps:oidc_client:0oa1963f00980866ca6b",
+    "name": "oidc_client",
+    "label": "Wiki",
+    "status": "ACTIVE",
+    "lastUpdated": "2026-07-10T19:25:27.000Z",
+    "created": "2026-07-10T19:25:26.000Z",
+    "accessibility": {
+      "selfService": false,
+      "errorRedirectUrl": null,
+      "loginRedirectUrl": null
+    },
+    "visibility": {
+      "autoLaunch": false,
+      "autoSubmitToolbar": false,
+      "hide": {
+        "iOS": true,
+        "web": true
+      },
+      "appLinks": {
+        "oidc_client_link": true
+      }
+    },
+    "features": [],
+    "signOnMode": "OPENID_CONNECT",
+    "credentials": {
+      "userNameTemplate": {
+        "template": "${source.login}",
+        "type": "BUILT_IN"
+      },
+      "signing": {
+        "kid": "sanitized-kid-0000000000000000000000000000"
+      },
+      "oauthClient": {
+        "autoKeyRotation": true,
+        "client_id": "0oa1963f00980866ca6b",
+        "token_endpoint_auth_method": "client_secret_basic",
+        "pkce_required": false
+      }
+    },
+    "universalLogout": {
+      "status": "DISABLED",
+      "supportType": "FULL",
+      "identityStack": "NOT_SHARED",
+      "protocol": "GLOBAL_TOKEN_REVOCATION"
+    },
+    "settings": {
+      "app": {},
+      "notifications": {
+        "vpn": {
+          "network": {
+            "connection": "DISABLED"
+          },
+          "message": null,
+          "helpUrl": null
+        }
+      },
+      "manualProvisioning": false,
+      "implicitAssignment": false,
+      "emOptInStatus": "NONE",
+      "notes": {
+        "admin": null,
+        "enduser": null
+      },
+      "oauthClient": {
+        "client_uri": null,
+        "logo_uri": null,
+        "redirect_uris": [
+          "https://example.com/callback"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "grant_types": [
+          "authorization_code"
+        ],
+        "application_type": "web",
+        "consent_method": "TRUSTED",
+        "issuer_mode": "ORG_URL",
+        "idp_initiated_login": {
+          "mode": "DISABLED",
+          "default_scope": []
+        },
+        "wildcard_redirect": "DISABLED",
+        "dpop_bound_access_tokens": false
+      }
+    },
+    "_links": {
+      "uploadLogo": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1963f00980866ca6b/logo",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      },
+      "appLinks": [
+        {
+          "name": "oidc_client_link",
+          "href": "https://integrator-0000000.okta.com/home/oidc_client/0oa1963f00980866ca6b/aln13b75fa4ab3f78968",
+          "type": "text/html"
+        }
+      ],
+      "profileEnrollment": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ccd89a47e34b4cba"
+      },
+      "policies": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1963f00980866ca6b/policies",
+        "hints": {
+          "allow": [
+            "PUT"
+          ]
+        }
+      },
+      "groups": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1963f00980866ca6b/groups"
+      },
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/default.6770228fb0dab49a1695ef440a5279bb.png",
+          "type": "image/png"
+        }
+      ],
+      "clientCredentials": [
+        {
+          "name": "secrets",
+          "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1963f00980866ca6b/credentials/secrets"
+        }
+      ],
+      "accessPolicy": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst12872f333b6350610"
+      },
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1963f00980866ca6b/users"
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1963f00980866ca6b/lifecycle/deactivate"
+      }
+    }
+  },
+  {
+    "id": "0oa1fc75b2ea21c8e0dd",
+    "orn": "orn:okta:idp:00o12f9ba965d0ff7aa3:apps:oidc_client:0oa1fc75b2ea21c8e0dd",
+    "name": "oidc_client",
+    "label": "Confluence",
+    "status": "ACTIVE",
+    "lastUpdated": "2026-07-11T01:15:06.000Z",
+    "created": "2026-07-11T01:15:05.000Z",
+    "accessibility": {
+      "selfService": false,
+      "errorRedirectUrl": null,
+      "loginRedirectUrl": null
+    },
+    "visibility": {
+      "autoLaunch": false,
+      "autoSubmitToolbar": false,
+      "hide": {
+        "iOS": true,
+        "web": true
+      },
+      "appLinks": {
+        "oidc_client_link": true
+      }
+    },
+    "features": [],
+    "signOnMode": "OPENID_CONNECT",
+    "credentials": {
+      "userNameTemplate": {
+        "template": "${source.login}",
+        "type": "BUILT_IN"
+      },
+      "signing": {
+        "kid": "sanitized-kid-0000000000000000000000000000"
+      },
+      "oauthClient": {
+        "autoKeyRotation": true,
+        "client_id": "0oa1fc75b2ea21c8e0dd",
+        "token_endpoint_auth_method": "client_secret_basic",
+        "pkce_required": false
+      }
+    },
+    "universalLogout": {
+      "status": "DISABLED",
+      "supportType": "FULL",
+      "identityStack": "NOT_SHARED",
+      "protocol": "GLOBAL_TOKEN_REVOCATION"
+    },
+    "settings": {
+      "app": {},
+      "notifications": {
+        "vpn": {
+          "network": {
+            "connection": "DISABLED"
+          },
+          "message": null,
+          "helpUrl": null
+        }
+      },
+      "manualProvisioning": false,
+      "implicitAssignment": false,
+      "emOptInStatus": "NONE",
+      "notes": {
+        "admin": null,
+        "enduser": null
+      },
+      "oauthClient": {
+        "client_uri": null,
+        "logo_uri": null,
+        "redirect_uris": [
+          "https://example.com/callback"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "grant_types": [
+          "authorization_code"
+        ],
+        "application_type": "web",
+        "consent_method": "TRUSTED",
+        "issuer_mode": "ORG_URL",
+        "idp_initiated_login": {
+          "mode": "DISABLED",
+          "default_scope": []
+        },
+        "wildcard_redirect": "DISABLED",
+        "dpop_bound_access_tokens": false
+      }
+    },
+    "_links": {
+      "uploadLogo": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1fc75b2ea21c8e0dd/logo",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      },
+      "appLinks": [
+        {
+          "name": "oidc_client_link",
+          "href": "https://integrator-0000000.okta.com/home/oidc_client/0oa1fc75b2ea21c8e0dd/aln13b75fa4ab3f78968",
+          "type": "text/html"
+        }
+      ],
+      "profileEnrollment": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ccd89a47e34b4cba"
+      },
+      "policies": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1fc75b2ea21c8e0dd/policies",
+        "hints": {
+          "allow": [
+            "PUT"
+          ]
+        }
+      },
+      "groups": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1fc75b2ea21c8e0dd/groups"
+      },
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/default.6770228fb0dab49a1695ef440a5279bb.png",
+          "type": "image/png"
+        }
+      ],
+      "clientCredentials": [
+        {
+          "name": "secrets",
+          "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1fc75b2ea21c8e0dd/credentials/secrets"
+        }
+      ],
+      "accessPolicy": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst16ffbd575c05d891c"
+      },
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1fc75b2ea21c8e0dd/users"
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa1fc75b2ea21c8e0dd/lifecycle/deactivate"
+      }
+    }
+  },
+  {
+    "id": "0oa13b666bbfe7330840",
+    "orn": "orn:okta:idp:00o12f9ba965d0ff7aa3:apps:oidc_client:0oa13b666bbfe7330840",
+    "name": "oidc_client",
+    "label": "Salesforce",
+    "status": "ACTIVE",
+    "lastUpdated": "2026-07-11T01:15:06.000Z",
+    "created": "2026-07-11T01:15:05.000Z",
+    "accessibility": {
+      "selfService": false,
+      "errorRedirectUrl": null,
+      "loginRedirectUrl": null
+    },
+    "visibility": {
+      "autoLaunch": false,
+      "autoSubmitToolbar": false,
+      "hide": {
+        "iOS": true,
+        "web": true
+      },
+      "appLinks": {
+        "oidc_client_link": true
+      }
+    },
+    "features": [],
+    "signOnMode": "OPENID_CONNECT",
+    "credentials": {
+      "userNameTemplate": {
+        "template": "${source.login}",
+        "type": "BUILT_IN"
+      },
+      "signing": {
+        "kid": "sanitized-kid-0000000000000000000000000000"
+      },
+      "oauthClient": {
+        "autoKeyRotation": true,
+        "client_id": "0oa13b666bbfe7330840",
+        "token_endpoint_auth_method": "client_secret_basic",
+        "pkce_required": false
+      }
+    },
+    "universalLogout": {
+      "status": "DISABLED",
+      "supportType": "FULL",
+      "identityStack": "NOT_SHARED",
+      "protocol": "GLOBAL_TOKEN_REVOCATION"
+    },
+    "settings": {
+      "app": {},
+      "notifications": {
+        "vpn": {
+          "network": {
+            "connection": "DISABLED"
+          },
+          "message": null,
+          "helpUrl": null
+        }
+      },
+      "manualProvisioning": false,
+      "implicitAssignment": false,
+      "emOptInStatus": "NONE",
+      "notes": {
+        "admin": null,
+        "enduser": null
+      },
+      "oauthClient": {
+        "client_uri": null,
+        "logo_uri": null,
+        "redirect_uris": [
+          "https://example.com/callback"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "grant_types": [
+          "authorization_code"
+        ],
+        "application_type": "web",
+        "consent_method": "TRUSTED",
+        "issuer_mode": "ORG_URL",
+        "idp_initiated_login": {
+          "mode": "DISABLED",
+          "default_scope": []
+        },
+        "wildcard_redirect": "DISABLED",
+        "dpop_bound_access_tokens": false
+      }
+    },
+    "_links": {
+      "uploadLogo": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa13b666bbfe7330840/logo",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      },
+      "appLinks": [
+        {
+          "name": "oidc_client_link",
+          "href": "https://integrator-0000000.okta.com/home/oidc_client/0oa13b666bbfe7330840/aln13b75fa4ab3f78968",
+          "type": "text/html"
+        }
+      ],
+      "profileEnrollment": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ccd89a47e34b4cba"
+      },
+      "policies": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa13b666bbfe7330840/policies",
+        "hints": {
+          "allow": [
+            "PUT"
+          ]
+        }
+      },
+      "groups": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa13b666bbfe7330840/groups"
+      },
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/default.6770228fb0dab49a1695ef440a5279bb.png",
+          "type": "image/png"
+        }
+      ],
+      "clientCredentials": [
+        {
+          "name": "secrets",
+          "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa13b666bbfe7330840/credentials/secrets"
+        }
+      ],
+      "accessPolicy": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst16ffbd575c05d891c"
+      },
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa13b666bbfe7330840/users"
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/apps/0oa13b666bbfe7330840/lifecycle/deactivate"
+      }
+    }
+  }
+]

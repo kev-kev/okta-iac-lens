@@ -16,6 +16,12 @@ dist-web/
 # ...but the hand-crafted, FAKE-DATA fixture is committed on purpose.
 !fixtures/sample-tenant.tfstate.json
 
+# ...and the SANITIZED real-tenant state (fake ids/secrets, structure preserved 1:1;
+# produced by scripts/sanitize-captures.ts from the gitignored raw export). Committed
+# on purpose as the M11 Phase C ground-truth fixture. The RAW real-tenant.tfstate.json
+# stays ignored by the rule above.
+!fixtures/api-real/tenant.tfstate.json
+
 # Generated artifacts (import blocks, exports, etc.)
 generated/
 

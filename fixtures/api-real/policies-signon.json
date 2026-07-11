@@ -1,0 +1,158 @@
+[
+  {
+    "id": "00p1a0638ce925325c1b",
+    "status": "ACTIVE",
+    "name": "Stricter-Session",
+    "description": "Higher-priority session policy for Engineering",
+    "priority": 1,
+    "system": false,
+    "conditions": {
+      "people": {
+        "groups": {
+          "include": [
+            "00g1eb226ab3a262cf5b"
+          ]
+        }
+      }
+    },
+    "created": "2026-07-11T01:15:05.000Z",
+    "lastUpdated": "2026-07-11T01:15:05.000Z",
+    "_links": {
+      "mappings": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p1a0638ce925325c1b/mappings",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p1a0638ce925325c1b",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p1a0638ce925325c1b/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p1a0638ce925325c1b/lifecycle/deactivate",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      }
+    },
+    "type": "OKTA_SIGN_ON"
+  },
+  {
+    "id": "00p15d811463ce958a5e",
+    "status": "ACTIVE",
+    "name": "Default-MFA",
+    "description": "MFA at sign-in for Engineering",
+    "priority": 2,
+    "system": false,
+    "conditions": {
+      "people": {
+        "groups": {
+          "include": [
+            "00g1eb226ab3a262cf5b"
+          ]
+        }
+      }
+    },
+    "created": "2026-07-02T14:39:45.000Z",
+    "lastUpdated": "2026-07-11T01:15:05.000Z",
+    "_links": {
+      "mappings": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p15d811463ce958a5e/mappings",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p15d811463ce958a5e",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p15d811463ce958a5e/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p15d811463ce958a5e/lifecycle/deactivate",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      }
+    },
+    "type": "OKTA_SIGN_ON"
+  },
+  {
+    "id": "00p15a0811dfbdc6e546",
+    "status": "ACTIVE",
+    "name": "Default Policy",
+    "description": "The default policy applies in all situations if no other policy applies.",
+    "priority": 3,
+    "system": true,
+    "conditions": {
+      "people": {
+        "groups": {
+          "include": [
+            "00g1dfa9aec3c68f637d"
+          ]
+        }
+      }
+    },
+    "created": "2026-07-01T22:37:37.000Z",
+    "lastUpdated": "2026-07-11T01:15:05.000Z",
+    "_links": {
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p15a0811dfbdc6e546",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/00p15a0811dfbdc6e546/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      }
+    },
+    "type": "OKTA_SIGN_ON"
+  }
+]

@@ -1,0 +1,138 @@
+[
+  {
+    "id": "00g1597bfa4cb2aa73f8",
+    "created": "2026-07-02T14:39:44.000Z",
+    "lastUpdated": "2026-07-02T14:39:44.000Z",
+    "lastMembershipUpdated": "2026-07-02T14:39:44.000Z",
+    "objectClass": [
+      "okta:user_group"
+    ],
+    "type": "OKTA_GROUP",
+    "profile": {
+      "name": "Contractors",
+      "description": "External contractors"
+    },
+    "_links": {
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-medium.30ce6d4085dff29412984e4c191bc874.png",
+          "type": "image/png"
+        },
+        {
+          "name": "large",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-large.c3cb8cda8ae0add1b4fe928f5844dbe3.png",
+          "type": "image/png"
+        }
+      ],
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1597bfa4cb2aa73f8/users"
+      },
+      "apps": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1597bfa4cb2aa73f8/apps"
+      }
+    }
+  },
+  {
+    "id": "00g1eb226ab3a262cf5b",
+    "created": "2026-07-02T14:39:44.000Z",
+    "lastUpdated": "2026-07-02T14:39:44.000Z",
+    "lastMembershipUpdated": "2026-07-07T23:37:42.000Z",
+    "objectClass": [
+      "okta:user_group"
+    ],
+    "type": "OKTA_GROUP",
+    "profile": {
+      "name": "Engineering",
+      "description": "Engineering staff"
+    },
+    "_links": {
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-medium.30ce6d4085dff29412984e4c191bc874.png",
+          "type": "image/png"
+        },
+        {
+          "name": "large",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-large.c3cb8cda8ae0add1b4fe928f5844dbe3.png",
+          "type": "image/png"
+        }
+      ],
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1eb226ab3a262cf5b/users"
+      },
+      "apps": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1eb226ab3a262cf5b/apps"
+      }
+    }
+  },
+  {
+    "id": "00g1dfa9aec3c68f637d",
+    "created": "2026-07-01T22:37:37.000Z",
+    "lastUpdated": "2026-07-01T22:37:37.000Z",
+    "lastMembershipUpdated": "2026-07-02T14:39:44.000Z",
+    "objectClass": [
+      "okta:user_group"
+    ],
+    "type": "BUILT_IN",
+    "profile": {
+      "name": "Everyone",
+      "description": "All users in your organization"
+    },
+    "_links": {
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-medium.30ce6d4085dff29412984e4c191bc874.png",
+          "type": "image/png"
+        },
+        {
+          "name": "large",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-large.c3cb8cda8ae0add1b4fe928f5844dbe3.png",
+          "type": "image/png"
+        }
+      ],
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1dfa9aec3c68f637d/users"
+      },
+      "apps": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1dfa9aec3c68f637d/apps"
+      }
+    }
+  },
+  {
+    "id": "00g1cc0a50445e197ee7",
+    "created": "2026-07-01T22:37:37.000Z",
+    "lastUpdated": "2026-07-01T22:37:37.000Z",
+    "lastMembershipUpdated": "2026-07-01T22:37:37.000Z",
+    "objectClass": [
+      "okta:user_group"
+    ],
+    "type": "BUILT_IN",
+    "profile": {
+      "name": "Okta Administrators",
+      "description": "Okta manages this group, which contains all administrators in your organization."
+    },
+    "_links": {
+      "logo": [
+        {
+          "name": "medium",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-medium.30ce6d4085dff29412984e4c191bc874.png",
+          "type": "image/png"
+        },
+        {
+          "name": "large",
+          "href": "https://ok14static.oktacdn.com/assets/img/logos/groups/odyssey/okta-large.c3cb8cda8ae0add1b4fe928f5844dbe3.png",
+          "type": "image/png"
+        }
+      ],
+      "users": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1cc0a50445e197ee7/users"
+      },
+      "apps": {
+        "href": "https://integrator-0000000.okta.com/api/v1/groups/00g1cc0a50445e197ee7/apps"
+      }
+    }
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "type": "group_rule",
+    "id": "0pr1e1873878bab33740",
+    "status": "ACTIVE",
+    "name": "eng-rule",
+    "created": "2026-07-02T14:39:45.000Z",
+    "lastUpdated": "2026-07-02T14:39:45.000Z",
+    "conditions": {
+      "people": {
+        "users": {
+          "exclude": []
+        },
+        "groups": {
+          "exclude": []
+        }
+      },
+      "expression": {
+        "value": "user.department==\"Engineering\"",
+        "type": "urn:okta:expression:1.0"
+      }
+    },
+    "actions": {
+      "assignUserToGroups": {
+        "groupIds": [
+          "00g1eb226ab3a262cf5b"
+        ]
+      }
+    },
+    "allGroupsValid": true
+  },
+  {
+    "type": "group_rule",
+    "id": "0pr1dbaf936c44c70dee",
+    "status": "INACTIVE",
+    "name": "inactive-contractor-rule",
+    "created": "2026-07-11T01:15:05.000Z",
+    "lastUpdated": "2026-07-11T01:15:05.000Z",
+    "conditions": {
+      "people": {
+        "users": {
+          "exclude": []
+        },
+        "groups": {
+          "exclude": []
+        }
+      },
+      "expression": {
+        "value": "user.title==\"Contractor\"",
+        "type": "urn:okta:expression:1.0"
+      }
+    },
+    "actions": {
+      "assignUserToGroups": {
+        "groupIds": [
+          "00g1597bfa4cb2aa73f8"
+        ]
+      }
+    },
+    "allGroupsValid": true
+  }
+]

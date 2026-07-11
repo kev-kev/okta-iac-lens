@@ -71,10 +71,25 @@ Two findings sets drive M11–M15:
 - [ ] **Human:** `terraform apply` (also applies M10's Wiki app), export `terraform show -json` (gitignored), then add ONE click-ops group to **Confluence** in the console — the M14 drift probe.
 
 ### Phase C — capture + ground truth (read-only token)
-- [ ] `npm run smoke` → sanitize `generated/okta-captures/` → commit as `fixtures/api-real/` (structure-true, fake values). Keep the idealized `fixtures/api/` for the existing unit oracles.
-- [ ] Sanitize the state export the same way and commit it (needs a second explicit `.gitignore` exception, like the sample fixture).
-- [ ] **M10 leftover:** `outliers --source okta` flags GitHub weaker-than-peers; matches the admin console.
-- [ ] Record the console's answers for: the test user's full app list (including the individual assignment), the effective session policy for an Engineering user, the INACTIVE rule's effect, and which built-in apps appear in `/api/v1/apps`.
+- [x] `npm run smoke` → sanitize `generated/okta-captures/` → commit as `fixtures/api-real/` (structure-true, fake values). Keep the idealized `fixtures/api/` for the existing unit oracles. *Done via `scripts/sanitize-captures.ts` (committed, auditable, no secrets): one shared id map across the 6 captures + the state so an id means the same thing on both paths; scrubs org subdomain, Okta ids, signing `kid`, and the 5 real `client_secret`s; a leak guard fails the run if any real value survives. Names/labels were already seed-synthetic.*
+- [x] Sanitize the state export the same way and commit it (needs a second explicit `.gitignore` exception, like the sample fixture). *Committed at `fixtures/api-real/tenant.tfstate.json` with its own `!`-exception; the RAW `fixtures/real-tenant.tfstate.json` stays gitignored.*
+- [ ] **M10 leftover:** `outliers --source okta` flags GitHub weaker-than-peers; matches the admin console. **⚠ Does NOT reproduce as authored — seed collision found (see below). Blocked on a decision: fix+re-apply the seed, or record as not-reproduced.**
+- [x] Record the console's answers (API-derived below; **human confirms against the admin console**): the test user's full app list (incl. the individual assignment), the effective session policy for an Engineering user, the INACTIVE rule's effect, and which built-in apps appear in `/api/v1/apps`.
+
+#### Phase C ground-truth record (from the sanitized captures @ 2026-07-10; console-confirm the ✎ rows)
+
+Seed applied (Phase B done): live shows the INACTIVE `inactive-contractor-rule`, `Stricter-Session` (prio 1) / `Default-MFA` (prio 2), Salesforce (no group), Confluence via plural, Wiki. The click-ops drift group on Confluence = **Contractors** (live + exported state both carry it).
+
+| Question | API-derived answer | Tool today | Predicted red (Phase D) |
+|---|---|---|---|
+| Test user's full app list | GitHub, Datadog, Wiki, Confluence (via **Engineering**) **+ Salesforce (individual `okta_app_user`)** = **5** ✎ | group-union trace → **4** (omits Salesforce) | user trace misses the individual assignment (M12/M13) |
+| Effective session policy for an Engineering user | **Stricter-Session** (priority 1 wins over Default-MFA priority 2) ✎ | first-edge-wins (address order) → **Default-MFA** | wrong/ambiguous session policy under priority (M12) |
+| INACTIVE `inactive-contractor-rule` effect | Okta evaluates it as **nothing** (populates no one) ✎ | parser ignores `status` → phantom `populates` edge to Contractors | INACTIVE treated as active (M12) |
+| Built-in apps in `/api/v1/apps` | capture returned **only the 5 managed OIDC apps — no built-in Okta apps** (Admin Console/Dashboard/Browser Plugin appear only as `ACCESS_POLICY` objects, not as apps) ✎ | n/a | "built-ins reported as gaps" may **not** reproduce in this tenant — verify in console before writing that Phase D red (M14) |
+
+#### ⚠ M10 outlier collision (deterministic, reproduces from the committed fixtures)
+
+`outliers --source okta` reports **(no outliers)**. Cause: the **Engineering** peer set is now `{GitHub, Datadog, Wiki, Confluence}` = Strict-Auth×2 (Datadog, Wiki) vs org-default×2 (GitHub, Confluence) — a **2-2 tie**, so `dominantPolicy` returns none (needs a *unique* ≥2/3 mode). The seed's M10 comment (seed/main.tf:77–79) assumed Engineering = `{GitHub, Datadog, Wiki}` (Strict-Auth 2/3 dominant → GitHub flagged), but Phase B construct (4) added **Confluence to Engineering at org-default**, diluting the majority. This is inherent to the seed as authored (independent of the console-drift step); the tool is behaving correctly (a genuine tie is not an outlier). Contractors peer set = `{GitHub, Confluence}` = 2 apps < MIN_PEERS, so it can't rescue the demo. **Fix if we want the M10 live demo back:** give Confluence the Strict-Auth policy (one line: `authentication_policy = okta_app_signon_policy.strict_auth.id`) → Engineering = 3 custom / 1 default → GitHub flags weaker-than-peers again; needs a human re-apply + re-export + re-sanitize. Does not affect the M14 drift probe.
 
 ### Phase D — the expected-red suite
 - [ ] Equivalence/coverage/trace tests against `fixtures/api-real/` + the sanitized state, using `it.fails` (or todo) where the review predicts divergence: junk App nodes from lookalikes; missing `protects` edge; wrong/ambiguous session policy under priority; INACTIVE treated as active; built-ins reported as gaps; plural-drift absorbed as "managed"; user trace missing the individual assignment.
