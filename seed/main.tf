@@ -13,6 +13,11 @@
 #   terraform init && terraform apply
 #   terraform show -json > ../fixtures/real-tenant.tfstate.json   # gitignored
 #
+# M11 post-apply step (the M14 drift probe): in the admin console, assign ONE extra
+# group to the Confluence app (managed by the plural `okta_app_group_assignments`
+# below). Do this AFTER the export above, or re-export once more — we want a state
+# that has silently absorbed the click-ops group. See construct (4) at the bottom.
+#
 # Untested from my side (no terraform in my sandbox) — pinned to provider v4; if an
 # argument name drifts, the registry docs for your installed version win.
 
@@ -112,9 +117,14 @@ resource "okta_group_rule" "eng_rule" {
 }
 
 # --- Global session policy applied to Engineering ----------------------------
+# priority = 2 (explicit) so the M11 priority-divergence case below is deterministic.
+# Address order sorts `default_mfa` BEFORE `stricter_session`, so the tool's
+# first-edge-wins heuristic picks THIS policy — but Okta evaluates by priority, where
+# `stricter_session` (priority 1) wins. That gap is the M11 Phase D red / M12 fix.
 resource "okta_policy_signon" "default_mfa" {
   name            = "Default-MFA"
   status          = "ACTIVE"
+  priority        = 2
   description     = "MFA at sign-in for Engineering"
   groups_included = [okta_group.engineering.id]
 }
@@ -128,4 +138,77 @@ resource "okta_user" "test_user" {
   login      = "test.user@example.com"
   email      = "test.user@example.com"
   department = "Engineering"
+}
+
+# =============================================================================
+# M11 adversarial additions — each construct exists to make a review-predicted
+# blind spot REPRODUCE against the live tenant + the sanitized fixtures, so it
+# can be pinned as an expected-red test (Phase D) that M12–M14 later green.
+# The human applies these (write token); nothing here is tool-facing.
+# =============================================================================
+
+# (1) Individual user→app assignment — the unmodeled access channel (M12/M13).
+# Salesforce is granted to NO group the test user belongs to; the ONLY way the
+# user reaches it is this direct `okta_app_user`. `GET /users/{id}/appLinks` will
+# list Salesforce (direct + indirect assignments), but the group-union trace will
+# miss it. Red: user trace omits Salesforce.
+resource "okta_app_oauth" "salesforce" {
+  label          = "Salesforce"
+  type           = "web"
+  grant_types    = ["authorization_code"]
+  redirect_uris  = ["https://example.com/callback"]
+  response_types = ["code"]
+  # deliberately NO okta_app_group_assignment — reachable only individually.
+}
+
+resource "okta_app_user" "salesforce_test_user" {
+  app_id   = okta_app_oauth.salesforce.id
+  user_id  = okta_user.test_user.id
+  username = okta_user.test_user.email
+}
+
+# (2) Second global session policy including Engineering at a HIGHER priority
+# (priority 1 wins over default_mfa's 2). Okta's effective session policy for an
+# Engineering user is THIS one; the tool's first-edge-wins (address order) picks
+# `default_mfa`. Red: wrong/ambiguous effective session policy under priority.
+resource "okta_policy_signon" "stricter_session" {
+  name            = "Stricter-Session"
+  status          = "ACTIVE"
+  priority        = 1
+  description     = "Higher-priority session policy for Engineering"
+  groups_included = [okta_group.engineering.id]
+}
+
+# (3) An INACTIVE group rule. Okta does not evaluate it, so it populates NOTHING;
+# the parser ignores `status` and will draw a `populates` edge as if it were live.
+# Red: INACTIVE rule treated as active (phantom populates edge).
+resource "okta_group_rule" "inactive_contractor_rule" {
+  name              = "inactive-contractor-rule"
+  status            = "INACTIVE"
+  expression_type   = "urn:okta:expression:1.0"
+  expression_value  = "user.title==\"Contractor\""
+  group_assignments = [okta_group.contractors.id]
+}
+
+# (4) An app managed via the PLURAL `okta_app_group_assignments` (single resource,
+# `group` blocks — the non-looping pattern from the CLAUDE.md provider gotcha).
+# The plural resource reads ALL groups assigned to the app from the API, so after
+# apply the human adds ONE click-ops group to Confluence in the admin console; the
+# next `terraform show -json` STATE absorbs that drift → coverage reports 100%
+# managed with no diff. Red (M14 drift probe): plural drift absorbed as "managed".
+resource "okta_app_oauth" "confluence" {
+  label          = "Confluence"
+  type           = "web"
+  grant_types    = ["authorization_code"]
+  redirect_uris  = ["https://example.com/callback"]
+  response_types = ["code"]
+}
+
+resource "okta_app_group_assignments" "confluence_groups" {
+  app_id = okta_app_oauth.confluence.id
+  group {
+    id = okta_group.engineering.id
+  }
+  # After apply: add a second group to Confluence via the CONSOLE (not here) — the
+  # M14 drift probe. Do NOT add it as a second `group` block.
 }
