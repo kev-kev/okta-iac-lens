@@ -33,16 +33,42 @@ function policyLabel(policy: { name: string; id: string } | null): string {
   return policy ? `${policy.name} (${policy.id})` : "— org default app sign-on policy";
 }
 
-export function renderSummary(summary: GraphSummary, format: OutputFormat): string {
-  if (format === "json") return JSON.stringify(summary, null, 2);
-  return [
+/**
+ * A null global session policy does NOT mean "no session gate" — it means the group falls back
+ * to the org's DEFAULT session policy (which we don't model as a resource). Say so, rather than
+ * "(none)", which reads as unprotected (M12 wording fix; mirrors `policyLabel`).
+ */
+function sessionPolicyLabel(policy: { name: string; id: string } | null): string {
+  return policy ? `${policy.name} (${policy.id})` : "— org default session policy";
+}
+
+export function renderSummary(
+  summary: GraphSummary,
+  format: OutputFormat,
+  /** okta_app_user count — surfaced as "present, not modeled" (M12). Omit when unavailable. */
+  individualAssignments?: number,
+): string {
+  if (format === "json") {
+    return JSON.stringify(
+      individualAssignments === undefined ? summary : { ...summary, individualAssignments },
+      null,
+      2,
+    );
+  }
+  const lines = [
     "IaC graph summary",
     `  Groups:                  ${summary.groups}`,
     `  Apps:                    ${summary.apps}`,
     `  Group rules:             ${summary.groupRules}`,
     `  Global session policies: ${summary.globalSessionPolicies}`,
     `  App auth policies:       ${summary.appAuthPolicies}`,
-  ].join("\n");
+  ];
+  if (individualAssignments !== undefined && individualAssignments > 0) {
+    lines.push(
+      `  Individual assignments:  ${individualAssignments}  (okta_app_user; present, not modeled as graph edges)`,
+    );
+  }
+  return lines.join("\n");
 }
 
 export function renderTrace(result: TraceResult, format: OutputFormat): string {
@@ -65,7 +91,7 @@ export function renderTrace(result: TraceResult, format: OutputFormat): string {
   }
   lines.push("");
   const gsp = result.globalSessionPolicy;
-  lines.push(`Global session policy: ${gsp ? `${gsp.name} (${gsp.id})` : "(none)"}`);
+  lines.push(`Global session policy: ${sessionPolicyLabel(gsp)}`);
   return lines.join("\n");
 }
 
@@ -127,7 +153,7 @@ export function renderUserTrace(result: UserTraceResult, format: OutputFormat): 
       const gsp = via.globalSessionPolicy;
       lines.push(
         `  - ${via.group.name} (${via.group.id})  ·  ${provenanceLabel(via.populatingRules)}` +
-          `  ·  session gate: ${gsp ? `${gsp.name} (${gsp.id})` : "(none)"}`,
+          `  ·  session gate: ${sessionPolicyLabel(gsp)}`,
       );
     }
   }
@@ -156,7 +182,7 @@ export function renderUserAppExplain(result: UserAppExplain, format: OutputForma
       const gsp = p.globalSessionPolicy;
       lines.push(
         `  - via ${p.group.name} (${p.group.id})  ·  ${provenanceLabel(p.populatingRules)}` +
-          `  ·  session gate: ${gsp ? `${gsp.name} (${gsp.id})` : "(none)"}`,
+          `  ·  session gate: ${sessionPolicyLabel(gsp)}`,
       );
     }
     lines.push(`App gate: ${policyLabel(result.authPolicy)}`);

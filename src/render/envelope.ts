@@ -11,9 +11,14 @@ import type { OktaGraph } from "../core/model.js";
 import type { SlimCoverageReport } from "../analysis/coverage.js";
 
 /**
- * Envelope version. Only bump for INCOMPATIBLE changes. Adding the optional `coverage` field is
- * additive — a v1 file without it stays valid, and a viewer that ignores it renders the graph —
- * so no bump is needed for M5.
+ * Envelope version. Only bump for INCOMPATIBLE changes.
+ *
+ * Additive changes DON'T bump: a viewer that ignores an added field still renders the graph.
+ *  - M5: the optional `coverage` overlay.
+ *  - M12: optional `status`/`priority` node fields (App/GroupRule/GlobalSessionPolicy/AppAuthPolicy)
+ *    — the viewer reads neither yet, so a v1 file stays valid and a v1 viewer renders a v2 graph.
+ *    (M11's synthesis PENCILLED a bump here; the widening turned out additive, exactly like M5,
+ *    so it's held at 1. Bump only when a future change — e.g. M15 rule refs — is truly breaking.)
  */
 export const ENVELOPE_VERSION = 1;
 

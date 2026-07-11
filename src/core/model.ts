@@ -62,6 +62,12 @@ export interface AppNode extends BaseNode {
   kind: "App";
   /** The Terraform resource type the app came from, e.g. "okta_app_oauth" | "okta_app_saml". */
   appType: string;
+  /**
+   * Okta lifecycle status (`ACTIVE` | `INACTIVE`), from `values.status` (tfstate) or `app.status`
+   * (live). Absent on the idealized fixtures → treat as ACTIVE. A DEACTIVATED app is unreachable;
+   * M12 ANNOTATES (carries the field) but does not filter — coverage still needs the object.
+   */
+  status?: string;
 }
 
 export interface GroupRuleNode extends BaseNode {
@@ -73,14 +79,32 @@ export interface GroupRuleNode extends BaseNode {
   expression: string;
   /** e.g. "urn:okta:expression:1.0". */
   expressionType?: string;
+  /**
+   * Okta lifecycle status (`ACTIVE` | `INACTIVE`). Absent → ACTIVE. An INACTIVE rule is not
+   * evaluated by Okta and populates NO ONE — build-graph emits no `populates` edge for it, but
+   * the node is kept (annotate, not filter) so coverage still sees the object.
+   */
+  status?: string;
 }
 
 export interface GlobalSessionPolicyNode extends BaseNode {
   kind: "GlobalSessionPolicy";
+  /**
+   * Evaluation priority (lower number = evaluated first). From `values.priority`. Absent → sorts
+   * LAST (Okta "API defaults to last/lowest if absent"). Traversal picks the lowest-priority
+   * ACTIVE policy that applies to a group.
+   */
+  priority?: number;
+  /** Okta lifecycle status (`ACTIVE` | `INACTIVE`). Absent → ACTIVE. INACTIVE policies are skipped. */
+  status?: string;
 }
 
 export interface AppAuthPolicyNode extends BaseNode {
   kind: "AppAuthPolicy";
+  /** Evaluation priority (lower = first). Carried for M15 rule ordering; unused by M12 traversal. */
+  priority?: number;
+  /** Okta lifecycle status (`ACTIVE` | `INACTIVE`). Absent → ACTIVE. */
+  status?: string;
 }
 
 export type GraphNode =

@@ -10,7 +10,7 @@ import { writeFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import { buildGraph } from "./core/build-graph.js";
 import { explainUserApp, summarize, trace, traceApp, traceUser } from "./core/access-paths.js";
-import { computeCoverage, slimCoverage } from "./analysis/coverage.js";
+import { computeCoverage, countIndividualAssignments, slimCoverage } from "./analysis/coverage.js";
 import { generateImportBlocks } from "./analysis/import-blocks.js";
 import { rankRisk } from "./analysis/rank-risk.js";
 import { findPolicyOutliers } from "./analysis/policy-outliers.js";
@@ -38,15 +38,19 @@ interface SourceOpts {
   state?: string;
 }
 
-async function loadGraph(opts: SourceOpts) {
+async function loadSourceResources(opts: SourceOpts) {
   if (opts.source === "okta") {
     loadDotEnv();
-    return buildGraph(await loadLiveResources());
+    return loadLiveResources();
   }
   if (!opts.state) {
     throw new Error("--source tfstate requires --state <path> (a `terraform show -json` export).");
   }
-  return buildGraph(await loadStateResources(opts.state));
+  return loadStateResources(opts.state);
+}
+
+async function loadGraph(opts: SourceOpts) {
+  return buildGraph(await loadSourceResources(opts));
 }
 
 const sourceOption = () =>
@@ -69,9 +73,12 @@ program
   .option("--json", "output JSON instead of text")
   .action(async (opts: SourceOpts & { json?: boolean }) => {
     try {
-      const graph = await loadGraph(opts);
+      const resources = await loadSourceResources(opts);
+      const graph = buildGraph(resources);
       const format: OutputFormat = opts.json ? "json" : "text";
-      console.log(renderSummary(summarize(graph), format));
+      console.log(
+        renderSummary(summarize(graph), format, countIndividualAssignments(resources)),
+      );
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

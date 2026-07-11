@@ -19,6 +19,10 @@ const KIND_TO_TF_TYPE: Record<Exclude<ParsedResource["kind"], "App">, string> = 
   // Assignment gaps target the SINGULAR resource (one block per pair); the plural imports by
   // app id and would pull ALL groups, wrong granularity for a per-pair gap.
   AppGroupAssignment: "okta_app_group_assignment",
+  // These two never reach coverage (kept out of KIND_ORDER — the live snapshot can't contain
+  // them, so they'd be false `stale`), hence never emit an import block. Mapped for completeness.
+  AppUserAssignment: "okta_app_user",
+  AppAccessPolicyAssignment: "okta_app_access_policy_assignment",
 };
 
 const UNKNOWN_APP_PREFIX = "okta_app_unknown:";
@@ -40,15 +44,38 @@ function nameMapFrom(resources: ParsedResource[]): Map<string, string> {
   return names;
 }
 
+// The two assignment-only lookalikes never reach import-block generation (they're kept out of
+// coverage's KIND_ORDER, so no `unmanaged` item is ever one of them); these arms exist only to
+// keep the switches total over the widened ParsedResource union.
 function importId(r: ParsedResource): string {
-  return r.kind === "AppGroupAssignment" ? `${r.appId}/${r.groupId}` : r.id;
+  switch (r.kind) {
+    case "AppGroupAssignment":
+      return `${r.appId}/${r.groupId}`;
+    case "AppUserAssignment":
+      return `${r.appId}/${r.userId}`;
+    case "AppAccessPolicyAssignment":
+      return `${r.appId}/${r.policyId}`;
+    default:
+      return r.id;
+  }
 }
 
 function baseLabel(r: ParsedResource, names: Map<string, string>): string {
-  if (r.kind === "AppGroupAssignment") {
+  if (
+    r.kind === "AppGroupAssignment" ||
+    r.kind === "AppUserAssignment" ||
+    r.kind === "AppAccessPolicyAssignment"
+  ) {
     const app = sanitizeLabel(names.get(r.appId) ?? r.appId);
-    const group = sanitizeLabel(names.get(r.groupId) ?? r.groupId);
-    return `${app}_${group}`;
+    // For assignments, label the "other" side by its display name when we have one (groups/apps
+    // are in the name map; users/policies aren't → fall back to the raw id).
+    const otherId =
+      r.kind === "AppGroupAssignment"
+        ? r.groupId
+        : r.kind === "AppUserAssignment"
+          ? r.userId
+          : r.policyId;
+    return `${app}_${sanitizeLabel(names.get(otherId) ?? otherId)}`;
   }
   return sanitizeLabel(r.name);
 }
