@@ -1,0 +1,332 @@
+[
+  {
+    "id": "rst16ffbd575c05d891c",
+    "status": "ACTIVE",
+    "name": "Any two factors",
+    "description": "Require two factors to access.",
+    "priority": 1,
+    "system": true,
+    "conditions": null,
+    "created": "2026-07-01T22:37:41.000Z",
+    "lastUpdated": "2026-07-01T22:37:42.000Z",
+    "_links": {
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst16ffbd575c05d891c",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst16ffbd575c05d891c/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      }
+    },
+    "_embedded": {
+      "resourceType": "APP"
+    },
+    "type": "ACCESS_POLICY"
+  },
+  {
+    "id": "rst1ef0e87596de8d37c",
+    "status": "ACTIVE",
+    "name": "Okta Admin Console",
+    "priority": 1,
+    "system": false,
+    "conditions": null,
+    "created": "2026-07-01T22:37:41.000Z",
+    "lastUpdated": "2026-07-01T22:37:41.000Z",
+    "_links": {
+      "mappings": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ef0e87596de8d37c/mappings",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ef0e87596de8d37c",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ef0e87596de8d37c/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1ef0e87596de8d37c/lifecycle/deactivate",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      }
+    },
+    "_embedded": {
+      "resourceType": "APP"
+    },
+    "type": "ACCESS_POLICY"
+  },
+  {
+    "id": "rst1053f311bd7c73f99",
+    "status": "ACTIVE",
+    "name": "Okta Dashboard",
+    "priority": 1,
+    "system": false,
+    "conditions": null,
+    "created": "2026-07-01T22:37:41.000Z",
+    "lastUpdated": "2026-07-01T22:37:41.000Z",
+    "_links": {
+      "mappings": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1053f311bd7c73f99/mappings",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1053f311bd7c73f99",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1053f311bd7c73f99/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1053f311bd7c73f99/lifecycle/deactivate",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      }
+    },
+    "_embedded": {
+      "resourceType": "APP"
+    },
+    "type": "ACCESS_POLICY"
+  },
+  {
+    "id": "rst15617be0552845180",
+    "status": "ACTIVE",
+    "name": "Okta Browser Plugin",
+    "priority": 1,
+    "system": false,
+    "conditions": null,
+    "created": "2026-07-01T22:37:41.000Z",
+    "lastUpdated": "2026-07-01T22:37:41.000Z",
+    "_links": {
+      "mappings": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst15617be0552845180/mappings",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst15617be0552845180",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst15617be0552845180/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst15617be0552845180/lifecycle/deactivate",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      }
+    },
+    "_embedded": {
+      "resourceType": "APP"
+    },
+    "type": "ACCESS_POLICY"
+  },
+  {
+    "id": "rst1a13cc50199dc31e5",
+    "status": "ACTIVE",
+    "name": "Okta Account Management Policy",
+    "description": "This policy defines how users must authenticate for authenticator enrollment, password reset, or unlock account. Password policy rules control whether to enforce this policy for password reset and unlock account.",
+    "priority": 1,
+    "system": false,
+    "conditions": null,
+    "created": "2026-07-01T22:37:43.000Z",
+    "lastUpdated": "2026-07-01T22:37:43.000Z",
+    "_links": {
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1a13cc50199dc31e5",
+        "hints": {
+          "allow": [
+            "GET"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1a13cc50199dc31e5/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      }
+    },
+    "_embedded": {
+      "resourceType": "END_USER_ACCOUNT_MANAGEMENT"
+    },
+    "type": "ACCESS_POLICY"
+  },
+  {
+    "id": "rst1465a83b9d7358d24",
+    "status": "ACTIVE",
+    "name": "Okta OIN Submission Tester",
+    "priority": 1,
+    "system": false,
+    "conditions": null,
+    "created": "2026-07-01T22:37:46.000Z",
+    "lastUpdated": "2026-07-01T22:37:46.000Z",
+    "_links": {
+      "mappings": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1465a83b9d7358d24/mappings",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1465a83b9d7358d24",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1465a83b9d7358d24/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst1465a83b9d7358d24/lifecycle/deactivate",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      }
+    },
+    "_embedded": {
+      "resourceType": "APP"
+    },
+    "type": "ACCESS_POLICY"
+  },
+  {
+    "id": "rst12872f333b6350610",
+    "status": "ACTIVE",
+    "name": "Strict-Auth",
+    "description": "Stricter auth for Datadog",
+    "priority": 1,
+    "system": false,
+    "conditions": null,
+    "created": "2026-07-02T14:39:45.000Z",
+    "lastUpdated": "2026-07-02T14:39:45.000Z",
+    "_links": {
+      "mappings": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst12872f333b6350610/mappings",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "self": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst12872f333b6350610",
+        "hints": {
+          "allow": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "rules": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst12872f333b6350610/rules",
+        "hints": {
+          "allow": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "deactivate": {
+        "href": "https://integrator-0000000.okta.com/api/v1/policies/rst12872f333b6350610/lifecycle/deactivate",
+        "hints": {
+          "allow": [
+            "POST"
+          ]
+        }
+      }
+    },
+    "_embedded": {
+      "resourceType": "APP"
+    },
+    "type": "ACCESS_POLICY"
+  }
+]
