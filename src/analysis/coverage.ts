@@ -81,7 +81,14 @@ export function slimCoverage(report: CoverageReport): SlimCoverageReport {
   };
 }
 
-/** Stable display/sort order for kinds. */
+/**
+ * Stable display/sort order for kinds — and the WHITELIST of kinds coverage classifies.
+ * `AppUserAssignment` and `AppAccessPolicyAssignment` are deliberately absent: the read-only
+ * live snapshot structurally cannot contain them (we don't fetch per-app users, and live
+ * app-auth arrives via the app's inline policy link, not a standalone assignment), so bucketing
+ * them live-vs-state would falsely report every one as `stale`. Individual assignments are
+ * COUNTED separately (`countIndividualAssignments`) and surfaced as a summary notice instead.
+ */
 const KIND_ORDER: ResourceKind[] = [
   "Group",
   "App",
@@ -91,12 +98,30 @@ const KIND_ORDER: ResourceKind[] = [
   "AppAuthPolicy",
 ];
 
+/**
+ * Count individual (`okta_app_user`) user→app assignments in a resource set — the unmodeled
+ * access channel (M11 review). Surfaced as "N present, not modeled" so it is never silently
+ * dropped; the per-user trace inclusion is M13's live appLinks diff. PURE.
+ */
+export function countIndividualAssignments(resources: ParsedResource[]): number {
+  return resources.filter((r) => r.kind === "AppUserAssignment").length;
+}
+
 /** Stable display/sort order for buckets — gaps first, managed last. */
 const BUCKET_ORDER: CoverageBucket[] = ["unmanaged", "stale", "excluded", "managed"];
 
-/** Within-kind identity key. Assignments carry no `id`; use the (app, group) pair. */
+/** Within-kind identity key. Assignment kinds carry no `id`; use the paired ids. */
 function keyOf(r: ParsedResource): string {
-  return r.kind === "AppGroupAssignment" ? `${r.appId}/${r.groupId}` : r.id;
+  switch (r.kind) {
+    case "AppGroupAssignment":
+      return `${r.appId}/${r.groupId}`;
+    case "AppUserAssignment":
+      return `${r.appId}/${r.userId}`;
+    case "AppAccessPolicyAssignment":
+      return `${r.appId}/${r.policyId}`;
+    default:
+      return r.id;
+  }
 }
 
 /** id -> display name for Groups and Apps, so assignment items can read "<app> / <group>". Live wins. */
@@ -110,10 +135,19 @@ function buildNameMap(live: ParsedResource[], state: ParsedResource[]): Map<stri
 }
 
 function nameOf(r: ParsedResource, names: Map<string, string>): string {
-  if (r.kind === "AppGroupAssignment") {
-    return `${names.get(r.appId) ?? r.appId} / ${names.get(r.groupId) ?? r.groupId}`;
+  switch (r.kind) {
+    case "AppGroupAssignment":
+      return `${names.get(r.appId) ?? r.appId} / ${names.get(r.groupId) ?? r.groupId}`;
+    case "AppUserAssignment":
+      // Kept out of KIND_ORDER (never a coverage item) — the live snapshot can't contain
+      // individual assignments, so classifying them here would be a false `stale`. Total for the
+      // compiler only. The count is surfaced via `individualAssignmentCount` + the summary notice.
+      return `${names.get(r.appId) ?? r.appId} / user ${r.userId}`;
+    case "AppAccessPolicyAssignment":
+      return `${names.get(r.appId) ?? r.appId} / policy ${r.policyId}`;
+    default:
+      return r.name;
   }
-  return r.name;
 }
 
 interface LiveContext {

@@ -24,6 +24,9 @@ const KIND_NOUN: Record<ResourceKind, string> = {
   GroupRule: "group rule",
   GlobalSessionPolicy: "global session policy",
   AppAuthPolicy: "app auth policy",
+  // Kept out of coverage's KIND_ORDER (never coverage items); present for Record completeness.
+  AppUserAssignment: "individual app assignment",
+  AppAccessPolicyAssignment: "app access-policy assignment",
 };
 
 function plural(n: number, noun: string): string {

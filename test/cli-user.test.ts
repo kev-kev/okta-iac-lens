@@ -47,10 +47,12 @@ describe("renderUserTrace", () => {
     expect(text).toMatch(/runtime policy conditions .* are not evaluated/);
   });
 
-  it("text: a direct (rule-less) membership reads as such, and no session policy shows (none)", () => {
+  it("text: a direct (rule-less) membership reads as such, and no custom session policy shows the org default", () => {
     const text = renderUserTrace(traceUser(graph, { user: alice, groupIds: ["g-con"] }), "text");
     expect(text).toContain("direct or app-push membership");
-    expect(text).toContain("session gate: (none)");
+    // A group with no custom global session policy falls back to the ORG DEFAULT session policy
+    // — not "(none)", which reads as unprotected (M12 wording fix).
+    expect(text).toContain("session gate: — org default session policy");
   });
 
   it("text: surfaces a count for membership groups outside the loaded scope", () => {

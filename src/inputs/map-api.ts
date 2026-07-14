@@ -78,6 +78,7 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       address: `okta-api:app/${app.id}`,
       authenticationPolicyId:
         policyId !== null && !systemPolicyIds.has(policyId) ? policyId : null,
+      status: app.status || undefined,
     });
   }
 
@@ -90,6 +91,7 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       expression: rule.conditions?.expression?.value ?? "",
       expressionType: rule.conditions?.expression?.type || undefined,
       populates: rule.actions?.assignUserToGroups?.groupIds ?? [],
+      status: rule.status || undefined,
     });
   }
 
@@ -101,6 +103,8 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       address: `okta-api:policy_signon/${policy.id}`,
       groupsIncluded: policy.conditions?.people?.groups?.include ?? [],
       system: policy.system === true,
+      priority: policy.priority,
+      status: policy.status || undefined,
     });
   }
 
@@ -116,6 +120,8 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       id: policy.id,
       name: policy.name,
       address: `okta-api:app_signon_policy/${policy.id}`,
+      priority: policy.priority,
+      status: policy.status || undefined,
     });
   }
 

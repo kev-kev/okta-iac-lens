@@ -85,3 +85,108 @@ describe("parseTfState — plural okta_app_group_assignments", () => {
     expect(byKind(parseTfState(stateWith({ app_id: "a-x" })), "AppGroupAssignment")).toHaveLength(0);
   });
 });
+
+// --- M12: make the graph true (allowlist, new kinds, status/priority) ---
+
+/** Build a minimal state from a list of {type, values} managed resources. */
+function stateOf(resources: { type: string; values: Record<string, unknown> }[]): unknown {
+  return {
+    values: {
+      root_module: {
+        resources: resources.map((r, i) => ({
+          address: `${r.type}.r${i}`,
+          mode: "managed",
+          type: r.type,
+          name: `r${i}`,
+          values: r.values,
+        })),
+      },
+    },
+  };
+}
+
+describe("parseTfState — M12 app-type allowlist", () => {
+  // The 9 NON-APP `okta_app_*` lookalikes (M11 fact table) that a narrow denylist let through.
+  const LOOKALIKES = [
+    "okta_app_oauth_api_scope",
+    "okta_app_oauth_post_logout_redirect_uri",
+    "okta_app_oauth_redirect_uri",
+    "okta_app_oauth_role_assignment",
+    "okta_app_saml_app_settings",
+    "okta_app_user_base_schema_property",
+    "okta_app_user_schema_property",
+  ];
+
+  it("does NOT turn okta_app_* lookalikes into App nodes", () => {
+    const state = stateOf(LOOKALIKES.map((type) => ({ type, values: { id: `x-${type}` } })));
+    expect(byKind(parseTfState(state), "App")).toHaveLength(0);
+  });
+
+  it("still parses every real okta_app_* application type", () => {
+    const APP_TYPES = [
+      "okta_app_auto_login",
+      "okta_app_basic_auth",
+      "okta_app_bookmark",
+      "okta_app_oauth",
+      "okta_app_saml",
+      "okta_app_secure_password_store",
+      "okta_app_shared_credentials",
+      "okta_app_swa",
+      "okta_app_three_field",
+    ];
+    const state = stateOf(APP_TYPES.map((type) => ({ type, values: { id: `a-${type}`, label: type } })));
+    expect(byKind(parseTfState(state), "App")).toHaveLength(APP_TYPES.length);
+  });
+});
+
+describe("parseTfState — M12 individual + access-policy assignments", () => {
+  it("captures okta_app_user as an AppUserAssignment (not an App), reading user_id", () => {
+    const state = stateOf([
+      { type: "okta_app_user", values: { id: "u1", app_id: "a-sf", user_id: "u1" } },
+    ]);
+    const res = parseTfState(state);
+    expect(byKind(res, "App")).toHaveLength(0);
+    expect(byKind(res, "AppUserAssignment")).toEqual([
+      { kind: "AppUserAssignment", address: "okta_app_user.r0", appId: "a-sf", userId: "u1" },
+    ]);
+  });
+
+  it("captures okta_app_access_policy_assignment as an AppAccessPolicyAssignment", () => {
+    const state = stateOf([
+      {
+        type: "okta_app_access_policy_assignment",
+        values: { id: "a-gh", app_id: "a-gh", policy_id: "p-auth" },
+      },
+    ]);
+    expect(byKind(parseTfState(state), "AppAccessPolicyAssignment")).toEqual([
+      {
+        kind: "AppAccessPolicyAssignment",
+        address: "okta_app_access_policy_assignment.r0",
+        appId: "a-gh",
+        policyId: "p-auth",
+      },
+    ]);
+  });
+});
+
+describe("parseTfState — M12 status + priority", () => {
+  it("carries status on apps and rules, priority+status on session policies", () => {
+    const state = stateOf([
+      { type: "okta_app_oauth", values: { id: "a", label: "A", status: "INACTIVE" } },
+      { type: "okta_group_rule", values: { id: "gr", name: "gr", status: "INACTIVE" } },
+      {
+        type: "okta_policy_signon",
+        values: { id: "p", name: "P", priority: 2, status: "ACTIVE" },
+      },
+    ]);
+    const res = parseTfState(state);
+    expect(byKind(res, "App")[0].status).toBe("INACTIVE");
+    expect(byKind(res, "GroupRule")[0].status).toBe("INACTIVE");
+    expect(byKind(res, "GlobalSessionPolicy")[0]).toMatchObject({ priority: 2, status: "ACTIVE" });
+  });
+
+  it("leaves status/priority undefined when absent (idealized fixtures => ACTIVE by default)", () => {
+    const state = stateOf([{ type: "okta_app_oauth", values: { id: "a", label: "A" } }]);
+    expect(byKind(parseTfState(state), "App")[0].status).toBeUndefined();
+  });
+});

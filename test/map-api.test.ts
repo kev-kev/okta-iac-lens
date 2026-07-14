@@ -46,13 +46,18 @@ function graphFromApiFixtures(): OktaGraph {
 }
 
 /**
- * Strip provenance (`address`) — the one field that legitimately differs between the
- * tfstate and API paths — and sort, so graphs compare as sets.
+ * Strip the fields that legitimately differ between the tfstate and API paths — `address`
+ * (provenance) and the M12 additive annotations `status`/`priority` (the idealized oracle
+ * fixtures carry them inconsistently: sample-tenant declares `status: ACTIVE`, the doc-derived
+ * api fixtures omit it). Their equivalence is proven separately by the real fixtures. Then sort,
+ * so graphs compare as sets — the oracle asserts STRUCTURAL equivalence (nodes/edges/layering).
  */
 function comparable(graph: OktaGraph) {
   const nodes = graph.nodes
     .map((n: GraphNode) => {
-      const { address: _address, ...rest } = n;
+      const { address: _address, ...rest } = n as GraphNode & { status?: string; priority?: number };
+      delete rest.status;
+      delete rest.priority;
       return rest;
     })
     .sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`));

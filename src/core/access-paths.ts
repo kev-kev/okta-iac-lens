@@ -70,19 +70,35 @@ export function groupsGrantingApp(graph: OktaGraph, appId: string): GroupNode[] 
   return groups;
 }
 
-/** appliesTo: GlobalSessionPolicy -> Group. At most one applies; take the first. */
+/**
+ * appliesTo: GlobalSessionPolicy -> Group. Multiple policies can include the same group; Okta
+ * evaluates them in PRIORITY order (lower number first) and the first applicable wins, so the
+ * EFFECTIVE policy is the lowest-priority ACTIVE one — NOT the first tfstate address (M12 fix).
+ * INACTIVE policies are skipped (not evaluated). Absent priority sorts last (Okta "API defaults
+ * to last/lowest"); ties break deterministically by id.
+ */
 export function sessionPolicyForGroup(
   graph: OktaGraph,
   groupId: string,
 ): GlobalSessionPolicyNode | null {
-  const applies = graph.edges.find((e) => e.kind === "appliesTo" && e.to === groupId);
-  if (!applies) return null;
-  return (
-    graph.nodes.find(
-      (n): n is GlobalSessionPolicyNode =>
-        n.kind === "GlobalSessionPolicy" && n.id === applies.from,
-    ) ?? null
-  );
+  const applied = graph.edges
+    .filter((e) => e.kind === "appliesTo" && e.to === groupId)
+    .map((e) =>
+      graph.nodes.find(
+        (n): n is GlobalSessionPolicyNode =>
+          n.kind === "GlobalSessionPolicy" && n.id === e.from,
+      ),
+    )
+    .filter((p): p is GlobalSessionPolicyNode => p != null && p.status !== "INACTIVE");
+  if (applied.length === 0) return null;
+
+  const rank = (p: GlobalSessionPolicyNode): number =>
+    p.priority ?? Number.POSITIVE_INFINITY;
+  return applied.reduce((best, p) => {
+    if (rank(p) < rank(best)) return p;
+    if (rank(p) === rank(best)) return p.id < best.id ? p : best;
+    return best;
+  });
 }
 
 /** protects: AppAuthPolicy -> App. Absence of an edge => org default (null), NOT unprotected. */

@@ -56,6 +56,8 @@ export interface RawPolicy {
   type: string;
   name: string;
   status?: string;
+  /** Evaluation priority (lower = evaluated first). Present on OKTA_SIGN_ON + ACCESS_POLICY policies. */
+  priority?: number;
   /**
    * true = Okta-managed built-in. Verified live: a fresh tenant's org-default
    * ACCESS_POLICY ("Any two factors") is the only `system: true` one. The mapper

@@ -29,6 +29,8 @@ export type ParsedResource =
       address: string;
       /** App sign-on policy id from `values.authentication_policy`; null => org default policy. */
       authenticationPolicyId: string | null;
+      /** Okta lifecycle status (`ACTIVE`|`INACTIVE`); undefined on fixtures that omit it => ACTIVE. */
+      status?: string;
     }
   | {
       kind: "GroupRule";
@@ -40,6 +42,8 @@ export type ParsedResource =
       expressionType?: string;
       /** Target group ids this rule populates (`values.group_assignments`). */
       populates: string[];
+      /** Okta lifecycle status (`ACTIVE`|`INACTIVE`); undefined => ACTIVE. INACTIVE => populates no one. */
+      status?: string;
     }
   | {
       kind: "GlobalSessionPolicy";
@@ -50,9 +54,34 @@ export type ParsedResource =
       groupsIncluded: string[];
       /** Live-only: true for Okta's built-in system policies. Unset on the tfstate path. */
       system?: boolean;
+      /** Evaluation priority (`values.priority`); lower = first. undefined => sorts last. */
+      priority?: number;
+      /** Okta lifecycle status (`ACTIVE`|`INACTIVE`); undefined => ACTIVE. */
+      status?: string;
     }
-  | { kind: "AppAuthPolicy"; id: string; name: string; address: string }
-  | { kind: "AppGroupAssignment"; address: string; appId: string; groupId: string };
+  | {
+      kind: "AppAuthPolicy";
+      id: string;
+      name: string;
+      address: string;
+      /** Evaluation priority; carried for M15. undefined => sorts last. */
+      priority?: number;
+      /** Okta lifecycle status; undefined => ACTIVE. */
+      status?: string;
+    }
+  | { kind: "AppGroupAssignment"; address: string; appId: string; groupId: string }
+  /**
+   * Individual user -> app assignment (`okta_app_user`). NOT a graph node/edge — a user is never
+   * a graph node (see model.ts / CLAUDE.md scale rule). Captured so it is COUNTED (coverage +
+   * summary notice), never silently dropped. The per-user trace inclusion is M13's appLinks diff.
+   */
+  | { kind: "AppUserAssignment"; address: string; appId: string; userId: string }
+  /**
+   * Standalone access-policy attachment (`okta_app_access_policy_assignment`; app_id + policy_id).
+   * The SECOND way an app gets a `protects` edge, besides the inline `authentication_policy`
+   * attribute. Confirmed present in okta/okta v4.20.0 (M11 Phase A).
+   */
+  | { kind: "AppAccessPolicyAssignment"; address: string; appId: string; policyId: string };
 
 /** Minimal, defensive view of the tfstate shapes we touch. */
 interface RawResource {
@@ -71,22 +100,36 @@ interface RawState {
 }
 
 /**
- * App resource types are `okta_app_*`, EXCEPT these lookalikes which are handled
- * as their own kinds (or, for the plural assignment, deferred to M2).
+ * The complete set of okta/okta v4.20.0 `okta_app_*` resources that are actual APPLICATION
+ * objects (→ `App` nodes). This is an ALLOWLIST, not a denylist: the M11 fact table found 9
+ * NON-APP `okta_app_*` lookalikes (okta_app_user, okta_app_access_policy_assignment, the schema
+ * and oauth-config sub-resources, ...) that a narrow denylist let through as junk App nodes.
+ * Anything not in this set is handled by an explicit case below or ignored.
+ * Only affects the tfstate path — `map-api` emits `App` records directly.
  */
-const APP_TYPE_DENYLIST = new Set([
-  "okta_app_group_assignment",
-  "okta_app_group_assignments",
-  "okta_app_signon_policy",
-  "okta_app_signon_policy_rule",
+const APP_TYPE_ALLOWLIST = new Set([
+  "okta_app_auto_login",
+  "okta_app_basic_auth",
+  "okta_app_bookmark",
+  "okta_app_oauth",
+  "okta_app_saml",
+  "okta_app_secure_password_store",
+  "okta_app_shared_credentials",
+  "okta_app_swa",
+  "okta_app_three_field",
 ]);
 
 function isAppType(type: string): boolean {
-  return type.startsWith("okta_app_") && !APP_TYPE_DENYLIST.has(type);
+  return APP_TYPE_ALLOWLIST.has(type);
 }
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
+}
+
+/** `values.priority` as a number, or undefined if absent/non-numeric (=> sorts last). */
+function num(v: unknown): number | undefined {
+  return typeof v === "number" ? v : undefined;
 }
 
 function strArray(v: unknown): string[] {
@@ -123,6 +166,7 @@ function normalizeResource(r: RawResource): ParsedResource[] {
           expression: str(values.expression_value),
           expressionType: str(values.expression_type) || undefined,
           populates: strArray(values.group_assignments),
+          status: str(values.status) || undefined,
         },
       ];
 
@@ -135,11 +179,42 @@ function normalizeResource(r: RawResource): ParsedResource[] {
           name: str(values.name),
           address,
           groupsIncluded: strArray(values.groups_included),
+          priority: num(values.priority),
+          status: str(values.status) || undefined,
         },
       ];
 
     case "okta_app_signon_policy":
-      return [{ kind: "AppAuthPolicy", id, name: str(values.name), address }];
+      return [
+        {
+          kind: "AppAuthPolicy",
+          id,
+          name: str(values.name),
+          address,
+          priority: num(values.priority),
+          status: str(values.status) || undefined,
+        },
+      ];
+
+    case "okta_app_user":
+      return [
+        {
+          kind: "AppUserAssignment",
+          address,
+          appId: str(values.app_id),
+          userId: str(values.user_id) || str(values.id),
+        },
+      ];
+
+    case "okta_app_access_policy_assignment":
+      return [
+        {
+          kind: "AppAccessPolicyAssignment",
+          address,
+          appId: str(values.app_id),
+          policyId: str(values.policy_id),
+        },
+      ];
 
     case "okta_app_group_assignment":
       return [
@@ -180,6 +255,7 @@ function normalizeResource(r: RawResource): ParsedResource[] {
           address,
           authenticationPolicyId:
             typeof authPolicy === "string" && authPolicy.length > 0 ? authPolicy : null,
+          status: str(values.status) || undefined,
         },
       ];
     }

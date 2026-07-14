@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { computeCoverage } from "../src/analysis/coverage.js";
+import { computeCoverage, countIndividualAssignments } from "../src/analysis/coverage.js";
 import type { CoverageBucket, CoverageReport, ResourceKind } from "../src/analysis/coverage.js";
 import type { ParsedResource } from "../src/core/parse-tfstate.js";
 import { liveResources, stateResources } from "./fixture.js";
@@ -183,5 +183,40 @@ describe("computeCoverage — ordering regressions", () => {
     const item = report.items.find((i) => i.key === "p-unused");
     expect(item?.bucket).toBe("managed");
     expect(kindRow(report, "AppAuthPolicy")).toMatchObject({ managed: 2, excluded: 0, stale: 0 });
+  });
+});
+
+// --- M12: individual (okta_app_user) assignments — counted, never coverage-classified ---
+
+describe("countIndividualAssignments + coverage exclusion (M12)", () => {
+  const appUser: ParsedResource = {
+    kind: "AppUserAssignment",
+    address: "okta_app_user.x",
+    appId: "a-sf",
+    userId: "u1",
+  };
+  const accessAssign: ParsedResource = {
+    kind: "AppAccessPolicyAssignment",
+    address: "okta_app_access_policy_assignment.x",
+    appId: "a-gh",
+    policyId: "p-auth",
+  };
+
+  it("counts okta_app_user records", () => {
+    expect(countIndividualAssignments([...state, appUser, appUser])).toBe(2);
+    expect(countIndividualAssignments(state)).toBe(0);
+  });
+
+  it("does NOT classify individual/access-policy assignments into any coverage bucket", () => {
+    // The live snapshot structurally can't contain these, so bucketing them would be a false
+    // `stale`. They must never appear as coverage items (kept out of KIND_ORDER).
+    const report = computeCoverage(live, [...state, appUser, accessAssign]);
+    expect(
+      report.items.some(
+        (i) => i.kind === "AppUserAssignment" || i.kind === "AppAccessPolicyAssignment",
+      ),
+    ).toBe(false);
+    // ...and they do not leak into totals as a phantom stale.
+    expect(report.overall.stale).toBe(0);
   });
 });
