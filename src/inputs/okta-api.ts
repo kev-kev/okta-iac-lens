@@ -90,6 +90,19 @@ export interface RawUser {
 }
 
 /**
+ * One row of `GET /api/v1/users/{userId}/appLinks` — an app tile Okta actually shows this user
+ * (the effective view: group-granted AND individually-assigned, incl. click-ops grants). This is
+ * PER-LINK, not per-app: one app can expose several links, so callers dedupe by `appInstanceId`.
+ * Only these two fields are used; the rest (URLs, sort order) is display chrome we don't read.
+ */
+export interface RawAppLink {
+  /** The app instance id — the join key to a graph `App` node (`AppNode.id`). */
+  appInstanceId: string;
+  /** Display label for the tile. Surfaced only for appLinks that match no graph app (drift). */
+  label: string;
+}
+
+/**
  * Narrow read-only interface. `map-api.ts` and tests depend on this, not on
  * `HttpOktaReader` directly, so fixtures can implement it with zero network.
  */
@@ -115,6 +128,12 @@ export interface OktaUserReader {
   getUserByLogin(login: string): Promise<RawUser>;
   /** `GET /api/v1/users/{userId}/groups` — the group ids this user belongs to. */
   listUserGroupIds(userId: string): Promise<string[]>;
+  /**
+   * `GET /api/v1/users/{userId}/appLinks` — the apps Okta actually shows this user (the effective
+   * view: group AND individual grants). The individual-assignment channel for `traceUser`; a plain
+   * read GET, so `smoke --verify-readonly` is unaffected. Scope: `okta.users.read`.
+   */
+  listUserAppLinks(userId: string): Promise<RawAppLink[]>;
 }
 
 export interface OktaReaderConfig {
@@ -241,6 +260,12 @@ export class HttpOktaReader implements OktaReader, OktaUserReader {
       `/api/v1/users/${encodeURIComponent(userId)}/groups`,
     );
     return groups.map((g) => g.id);
+  }
+
+  listUserAppLinks(userId: string): Promise<RawAppLink[]> {
+    return this.getPaginated<RawAppLink>(
+      `/api/v1/users/${encodeURIComponent(userId)}/appLinks`,
+    );
   }
 
   listGroups(): Promise<RawGroup[]> {

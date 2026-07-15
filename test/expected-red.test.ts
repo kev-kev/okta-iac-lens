@@ -20,6 +20,7 @@
 
 import { describe, expect, it } from "vitest";
 import { trace, traceApp, traceUser, summarize } from "../src/core/access-paths.js";
+import { resolveUserDirectAppsFromState } from "../src/inputs/load-resources.js";
 import { computeCoverage } from "../src/analysis/coverage.js";
 import {
   realStateGraph,
@@ -78,20 +79,24 @@ describe("M12 — greened reds (were M11 Phase D `it.fails`; now pass)", () => {
   });
 });
 
-describe("M11 Phase D — reproduced reds still open (flip to green at the named milestone)", () => {
-  it.fails(
-    "M13: user trace must include individually-assigned apps (Salesforce via okta_app_user)",
-    () => {
-      // test.user is only in Engineering, which does NOT grant Salesforce. Salesforce is
-      // reachable solely through the individual okta_app_user assignment. M12 COUNTS+surfaces it
-      // (never dropped) but does not put a user in the graph; the per-user trace inclusion is
-      // M13's live appLinks diff. Ground truth: 5 apps incl. Salesforce.
-      const ut = traceUser(realStateGraph(), { user: TEST_USER, groupIds: [ENGINEERING] });
-      const appNames = ut.apps.map((a) => a.name);
-      expect(appNames).toContain("Salesforce");
-      expect(appNames).toHaveLength(REAL_APP_LABELS.length);
-    },
-  );
+describe("M13 — greened red (was M11 Phase D `it.fails`; now passes via the directApps resolver)", () => {
+  it("M13: user trace includes individually-assigned apps (Salesforce via okta_app_user)", () => {
+    // test.user is only in Engineering, which does NOT grant Salesforce. Salesforce is reachable
+    // solely through the individual okta_app_user assignment. M12 COUNTS+surfaces it (never
+    // dropped); M13 folds it into the per-user trace via the state `directApps` resolver — the
+    // static twin of the live appLinks diff. Ground truth: 5 apps incl. Salesforce.
+    const graph = realStateGraph();
+    const directApps = resolveUserDirectAppsFromState(realStateResources(), graph, TEST_USER.id);
+    const ut = traceUser(graph, { user: TEST_USER, groupIds: [ENGINEERING] }, { directApps });
+
+    const appNames = ut.apps.map((a) => a.name);
+    expect(appNames).toContain("Salesforce");
+    expect(appNames).toHaveLength(REAL_APP_LABELS.length);
+    // Provenance stays honest: Salesforce is on the separate individual-assignment channel, not
+    // attributed to any group (Engineering does not grant it).
+    expect(ut.individualApps.map((a) => a.name)).toEqual(["Salesforce"]);
+    expect(ut.viaGroups.flatMap((g) => g.apps.map((a) => a.name))).not.toContain("Salesforce");
+  });
 });
 
 describe("M11 Phase D — predictions that did NOT reproduce (closed; see PLAN Phase D)", () => {
