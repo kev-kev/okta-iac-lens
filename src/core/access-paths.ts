@@ -219,11 +219,21 @@ export interface UserTraceResult {
   user: UserRef;
   /** Per-group breakdown, in the input (membership) order. */
   viaGroups: UserGroupAccess[];
-  /** Deduped union of every app reachable across the user's groups, in name order. */
+  /**
+   * Deduped union of every app the user reaches — across their groups AND by individual
+   * (direct) assignment — in name order. Individual apps are also listed on `individualApps`.
+   */
   apps: AppNode[];
   /**
+   * Apps the user reaches ONLY by individual assignment (`okta_app_user` / live appLinks),
+   * not granted by any of their groups. A separate, labeled provenance channel — these have no
+   * granting group, so they never appear in `viaGroups`. Name-sorted. Empty by default (the
+   * caller supplies `opts.directApps`; the user is still never a graph node — see `traceUser`).
+   */
+  individualApps: AppNode[];
+  /**
    * Per-app app auth policy, keyed by app id. `null` => the app falls back to the org default
-   * app sign-on policy (it is NOT unprotected).
+   * app sign-on policy (it is NOT unprotected). Covers both group-reached and individual apps.
    */
   appAuthPolicies: Record<string, AppAuthPolicyNode | null>;
   /**
@@ -238,10 +248,17 @@ export interface UserTraceResult {
  * membership (the live read that resolves email -> user -> group ids lives in `src/inputs`).
  * A user is a trace INPUT, never a graph node; this is what lets user trace stay pure and
  * scale to enterprise tenants (one user per lookup, no user nodes in the graph).
+ *
+ * `opts.directApps` are apps the user reaches by INDIVIDUAL assignment (not via any group) —
+ * also a per-lookup input, resolved in `src/inputs` (state `okta_app_user` records, or the live
+ * appLinks diff), never a graph edge and never a bulk `/apps/{id}/users` sweep (the PII rail).
+ * Defaults to `[]` => group-only behavior. Folded into the `apps` union and surfaced separately
+ * on `individualApps` so provenance stays honest.
  */
 export function traceUser(
   graph: OktaGraph,
   membership: { user: UserRef; groupIds: string[] },
+  opts: { directApps?: AppNode[] } = {},
 ): UserTraceResult {
   const viaGroups: UserGroupAccess[] = [];
   const unknownGroupIds: string[] = [];
@@ -260,21 +277,34 @@ export function traceUser(
     });
   }
 
-  // Deduped union of apps across all the user's groups.
+  // Deduped set of apps the user reaches via a group. This is the reference for deciding which
+  // of the individually-assigned apps are TRULY individual-only (not also group-reached).
+  const groupAppIds = new Set<string>();
   const appById = new Map<string, AppNode>();
   for (const via of viaGroups) {
     for (const app of via.apps) {
+      groupAppIds.add(app.id);
       if (!appById.has(app.id)) appById.set(app.id, app);
     }
   }
-  const apps = [...appById.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  // Fold in individually-assigned apps. `individualApps` is the subset reached ONLY this way.
+  const individualById = new Map<string, AppNode>();
+  for (const app of opts.directApps ?? []) {
+    if (!appById.has(app.id)) appById.set(app.id, app);
+    if (!groupAppIds.has(app.id) && !individualById.has(app.id)) individualById.set(app.id, app);
+  }
+
+  const byName = (a: AppNode, b: AppNode): number => a.name.localeCompare(b.name);
+  const apps = [...appById.values()].sort(byName);
+  const individualApps = [...individualById.values()].sort(byName);
 
   const appAuthPolicies: Record<string, AppAuthPolicyNode | null> = {};
   for (const app of apps) {
     appAuthPolicies[app.id] = authPolicyForApp(graph, app.id);
   }
 
-  return { user: membership.user, viaGroups, apps, appAuthPolicies, unknownGroupIds };
+  return { user: membership.user, viaGroups, apps, individualApps, appAuthPolicies, unknownGroupIds };
 }
 
 /** One way a user reaches an app: the granting group, whether it's rule-populated, and its session gate. */
