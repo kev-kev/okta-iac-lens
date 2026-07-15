@@ -19,7 +19,9 @@ import {
   loadLiveResources,
   loadStateResources,
   loadUserMembership,
+  resolveUserDirectApps,
 } from "./inputs/load-resources.js";
+import { HttpOktaReader, readOktaConfigFromEnv } from "./inputs/okta-api.js";
 import {
   renderAppTrace,
   renderCoverage,
@@ -111,12 +113,16 @@ program
             throw new Error("trace --user requires --source okta (Terraform state has no users).");
           }
           const graph = await loadGraph(opts);
-          const membership = await loadUserMembership(opts.user);
-          const result = traceUser(graph, membership);
+          // One reader for the whole user trace: membership + the appLinks individual-assignment
+          // diff. Both are per-user, read-only GETs — the PII rail holds (no bulk sweep, no node).
+          const reader = new HttpOktaReader(readOktaConfigFromEnv());
+          const membership = await loadUserMembership(opts.user, reader);
+          const { directApps, unmatchedApps } = await resolveUserDirectApps(reader, graph, membership);
+          const result = traceUser(graph, membership, { directApps });
           console.log(
             opts.app != null
               ? renderUserAppExplain(explainUserApp(graph, result, opts.app), format)
-              : renderUserTrace(result, format),
+              : renderUserTrace(result, format, unmatchedApps),
           );
           return;
         }

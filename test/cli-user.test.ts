@@ -99,10 +99,30 @@ describe("renderUserTrace", () => {
     expect(text).toContain("1 membership group(s) outside the loaded Terraform/live scope");
   });
 
-  it("json: round-trips the result", () => {
-    const parsed = JSON.parse(renderUserTrace(engTrace, "json"));
+  it("text: individual assignments read as a distinct channel (not a group grant)", () => {
+    const datadog = engTrace.apps.find((a) => a.name === "Datadog")!;
+    const trace = traceUser(graph, { user: alice, groupIds: ["g-con"] }, { directApps: [datadog] });
+    const text = renderUserTrace(trace, "text");
+    expect(text).toContain(
+      "- Datadog (a-dd)  ·  via: individual assignment (okta_app_user / appLinks — not a group grant)",
+    );
+    expect(text).toContain("+1 via individual assignment (okta_app_user / appLinks) — not a group grant");
+  });
+
+  it("text: live unmatched appLinks surface as reachable-but-not-in-Terraform drift", () => {
+    const text = renderUserTrace(engTrace, "text", [
+      { appInstanceId: "a-clickops", label: "Concur (click-ops)" },
+    ]);
+    expect(text).toContain("Reachable but not in Terraform (1): Concur (click-ops)");
+  });
+
+  it("json: round-trips the result and carries unmatchedApps", () => {
+    const parsed = JSON.parse(
+      renderUserTrace(engTrace, "json", [{ appInstanceId: "a-clickops", label: "Concur" }]),
+    );
     expect(parsed.user.login).toBe("alice@example.com");
     expect(parsed.apps.map((a: { name: string }) => a.name)).toEqual(["Datadog", "GitHub"]);
+    expect(parsed.unmatchedApps).toEqual([{ appInstanceId: "a-clickops", label: "Concur" }]);
   });
 });
 

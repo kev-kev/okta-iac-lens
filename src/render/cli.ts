@@ -127,8 +127,23 @@ const GATE_PRIOR_CAVEAT =
   "Note: gate strength is a heuristic prior (org-default vs custom policy), not a factor-based " +
   "verdict — M15. This flags a divergence, not a proven weakness.";
 
-export function renderUserTrace(result: UserTraceResult, format: OutputFormat): string {
-  if (format === "json") return JSON.stringify(result, null, 2);
+/**
+ * Live-only drift: apps Okta actually shows the user that are absent from Terraform (a click-ops
+ * app). Surfaced verbatim so individual/click-ops grants are never silently dropped — mirrors the
+ * `UnmatchedAppLink` shape from the appLinks resolver, structurally, so render stays inputs-free.
+ */
+export type UnmatchedApps = readonly { appInstanceId: string; label: string }[];
+
+const INDIVIDUAL_VIA = "individual assignment (okta_app_user / appLinks — not a group grant)";
+
+export function renderUserTrace(
+  result: UserTraceResult,
+  format: OutputFormat,
+  unmatchedApps: UnmatchedApps = [],
+): string {
+  if (format === "json") return JSON.stringify({ ...result, unmatchedApps }, null, 2);
+
+  const individualIds = new Set(result.individualApps.map((a) => a.id));
 
   const lines: string[] = [];
   lines.push(`User: ${result.user.login} (${result.user.id})`);
@@ -139,12 +154,19 @@ export function renderUserTrace(result: UserTraceResult, format: OutputFormat): 
     lines.push("  (none)");
   } else {
     for (const app of result.apps) {
-      const via = result.viaGroups
-        .filter((v) => v.apps.some((a) => a.id === app.id))
-        .map((v) => v.group.name)
-        .join(", ");
+      const via = individualIds.has(app.id)
+        ? INDIVIDUAL_VIA
+        : result.viaGroups
+            .filter((v) => v.apps.some((a) => a.id === app.id))
+            .map((v) => v.group.name)
+            .join(", ");
       lines.push(
         `  - ${app.name} (${app.id})  ·  via: ${via}  ·  app gate: ${policyLabel(result.appAuthPolicies[app.id])}`,
+      );
+    }
+    if (result.individualApps.length > 0) {
+      lines.push(
+        `  (+${result.individualApps.length} via individual assignment (okta_app_user / appLinks) — not a group grant)`,
       );
     }
   }
@@ -165,6 +187,14 @@ export function renderUserTrace(result: UserTraceResult, format: OutputFormat): 
   if (result.unknownGroupIds.length > 0) {
     lines.push(
       `  (+ ${result.unknownGroupIds.length} membership group(s) outside the loaded Terraform/live scope, not shown)`,
+    );
+  }
+
+  if (unmatchedApps.length > 0) {
+    lines.push("");
+    lines.push(
+      `Reachable but not in Terraform (${unmatchedApps.length}): ` +
+        unmatchedApps.map((u) => u.label).join(", "),
     );
   }
 
