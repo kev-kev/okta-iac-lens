@@ -30,13 +30,13 @@ describe("rankRisk — reach × gate (no coverage)", () => {
 
   it("labels each signal legibly on the row", () => {
     const gh = byId(rows, "a-gh");
-    expect(gh).toMatchObject({ kind: "App", reach: 2, gate: "org-default", gateStrength: "weak" });
+    expect(gh).toMatchObject({ kind: "App", reach: 2, gate: "org-default", gatePrior: "default" });
     const dd = byId(rows, "a-dd");
-    expect(dd).toMatchObject({ reach: 1, gate: "custom", gateStrength: "strong" });
+    expect(dd).toMatchObject({ reach: 1, gate: "custom", gatePrior: "custom" });
     const eng = byId(rows, "g-eng");
-    expect(eng).toMatchObject({ kind: "Group", reach: 2, gate: "session-policy", gateStrength: "strong" });
+    expect(eng).toMatchObject({ kind: "Group", reach: 2, gate: "session-policy", gatePrior: "custom" });
     const con = byId(rows, "g-con");
-    expect(con).toMatchObject({ reach: 1, gate: "none", gateStrength: "weak" });
+    expect(con).toMatchObject({ reach: 1, gate: "none", gatePrior: "default" });
   });
 
   it("marks IaC status 'unknown' and neutralizes its weight when no coverage is supplied", () => {
@@ -76,7 +76,7 @@ describe("rankRisk — with coverage, the IaC weight lifts an unmanaged resource
     expect(slackRow.iac).toBe("unmanaged");
     expect(gh.iac).toBe("managed");
     expect(slackRow.reach).toBe(gh.reach); // same reach
-    expect(slackRow.gateStrength).toBe(gh.gateStrength); // same gate
+    expect(slackRow.gatePrior).toBe(gh.gatePrior); // same gate
     expect(slackRow.score).toBeGreaterThan(gh.score); // …but unmanaged compounds
     expect(rows[0].id).toBe("a-slack"); // widest reach, weakest gate, NOT in Terraform → first
   });
@@ -91,14 +91,20 @@ describe("renderRisk", () => {
 
   it("text: ranked rows with the signal columns, highest risk first", () => {
     const text = renderRisk(rows, "text");
-    expect(text).toContain("widest reach × weakest gate × not-in-Terraform first");
+    expect(text).toContain("widest reach × default-gate prior × not-in-Terraform first");
     const lines = text.split("\n");
     const gh = lines.findIndex((l) => l.includes("GitHub"));
     const dd = lines.findIndex((l) => l.includes("Datadog"));
     expect(gh).toBeGreaterThan(-1);
     expect(gh).toBeLessThan(dd); // GitHub ranked above Datadog
-    expect(lines[gh]).toContain("org-default (weak)");
+    expect(lines[gh]).toContain("org-default (default)");
     expect(lines[gh]).toContain("n/a"); // no coverage supplied
+  });
+
+  it("text: prints the 'prior, not proof' gate caveat so the honesty note can't regress", () => {
+    const text = renderRisk(rows, "text");
+    expect(text).toContain("gate strength is a heuristic prior");
+    expect(text).toContain("not a proven weakness");
   });
 
   it("json: preserves the ranked order", () => {

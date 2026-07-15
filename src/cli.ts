@@ -142,7 +142,7 @@ program
 program
   .command("risk")
   .description(
-    "Rank apps and groups by composite risk: reach × gate strength × IaC status (widest reach, weakest gate, not-in-Terraform first).",
+    "Rank apps and groups by composite risk: reach × gate prior (org-default vs custom) × IaC status (widest reach, default-gated, not-in-Terraform first).",
   )
   .addOption(sourceOption())
   .option("--state <path>", "path to `terraform show -json` output (tfstate source, or the baseline for --iac)")

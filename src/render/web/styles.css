@@ -377,8 +377,9 @@ body {
   flex: none;
   margin-left: 12px;
 }
-/* Weak-gate rows (org-default / no session policy) get a subtle risk cue in risk order. */
-.explorer-row.is-weak-gate {
+/* Default-gate rows (org-default / no session policy — a prior, not proven weakness) get a subtle
+   risk cue in risk order. */
+.explorer-row.is-default-gate {
   box-shadow: inset 3px 0 0 var(--warn, #d98a2b);
 }
 
@@ -393,7 +394,7 @@ body {
   font-size: 11px;
   font-weight: 600;
 }
-.severity-chip.is-weaker {
+.severity-chip.is-default-custom {
   background: var(--bucket-unmanaged, #f59e0b);
   color: #111827;
 }
@@ -492,7 +493,7 @@ body {
   outline: 2px solid var(--text);
   outline-offset: -2px;
 }
-.matrix-key.sev-weaker-than-peers {
+.matrix-key.sev-default-while-peers-custom {
   background: rgba(245, 158, 11, 0.7);
 }
 .matrix-key.sev-differs-from-peers {

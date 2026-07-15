@@ -50,7 +50,7 @@ function outlierGraph(spec: {
 }
 
 describe("findPolicyOutliers (hand-built oracles)", () => {
-  it("flags an org-default app among custom-gated peers as weaker-than-peers", () => {
+  it("flags an org-default app among custom-gated peers as default-while-peers-custom", () => {
     // 4 peers, 3 behind P1, 1 org-default: dominant P1 (3/4 >= 2/3).
     const report = findPolicyOutliers(
       outlierGraph({
@@ -64,8 +64,8 @@ describe("findPolicyOutliers (hand-built oracles)", () => {
     const row = report.rows[0]!;
     expect(row.appId).toBe("x");
     expect(row.appPolicyId).toBeNull();
-    expect(row.severity).toBe("weaker-than-peers");
-    expect(row.score).toBe(6); // 2 (weaker) × 3 (dominantCount)
+    expect(row.severity).toBe("default-while-peers-custom");
+    expect(row.score).toBe(6); // 2 (default-vs-custom prior) × 3 (dominantCount)
     expect(row.findings).toEqual([
       {
         groupId: "G",
@@ -74,7 +74,7 @@ describe("findPolicyOutliers (hand-built oracles)", () => {
         dominantPolicyId: "P1",
         dominantPolicyName: "P1",
         dominantCount: 3,
-        severity: "weaker-than-peers",
+        severity: "default-while-peers-custom",
       },
     ]);
   });
@@ -162,7 +162,7 @@ describe("findPolicyOutliers (hand-built oracles)", () => {
     const row = report.rows[0]!;
     expect(row.appId).toBe("a1");
     expect(row.appPolicyId).toBeNull(); // the dangling edge never counted
-    expect(row.severity).toBe("weaker-than-peers");
+    expect(row.severity).toBe("default-while-peers-custom");
   });
 
   it("dedupes duplicate grants and lets the first of duplicate protects edges win", () => {
@@ -187,7 +187,7 @@ describe("findPolicyOutliers (hand-built oracles)", () => {
     const row = report.rows[0]!;
     expect(row.findingCount).toBe(n);
     expect(row.findings).toHaveLength(EVIDENCE_CAP);
-    expect(row.score).toBe(n * 2 * 2); // every set: 2 (weaker) × dominantCount 2
+    expect(row.score).toBe(n * 2 * 2); // every set: 2 (default-vs-custom prior) × dominantCount 2
   });
 
   it("negative oracle: the committed fixture has no peer set of MIN_PEERS", () => {
@@ -210,10 +210,16 @@ describe("renderOutliers", () => {
     expect(text).toContain("Policy outliers");
     expect(text).toContain("GitHub");
     expect(text).toContain("org default");
-    expect(text).toContain("weaker-than-peers");
+    expect(text).toContain("default-while-peers-custom");
     expect(text).toContain("- in Engineering (4 apps): 3/4 peers behind Strict-Auth");
     expect(text).toContain("Evaluated 1 peer group(s); 1 had a dominant policy.");
     expect(text).toContain("not policy contents");
+  });
+
+  it("prints the 'prior, not proof' gate caveat so the honesty note can't regress", () => {
+    const text = renderOutliers(outlierReport, "text");
+    expect(text).toContain("gate strength is a heuristic prior");
+    expect(text).toContain("not a proven weakness");
   });
 
   it("renders the honest empty state with evaluation stats", () => {

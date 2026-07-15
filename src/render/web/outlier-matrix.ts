@@ -129,7 +129,7 @@ export function buildOutlierMatrix(graph: OktaGraph): OutlierMatrix {
         appIds: appIds.slice(0, CELL_APP_CAP),
         isDominant,
         ...(divergent
-          ? { severity: (col.id === ORG_DEFAULT_COL ? "weaker-than-peers" : "differs-from-peers") as OutlierSeverity }
+          ? { severity: (col.id === ORG_DEFAULT_COL ? "default-while-peers-custom" : "differs-from-peers") as OutlierSeverity }
           : {}),
       };
     });

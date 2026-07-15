@@ -8,8 +8,11 @@
  *
  * The three signals — each surfaced on the row so the ranking is legible, not a black box:
  *  1. REACH — apps a group grants / groups that grant an app (blast radius).
- *  2. GATE STRENGTH — org-default app policy / no session policy = WEAK; a custom policy = STRONG.
- *     ("org default" is NOT "unprotected" — it's the org-wide default; a custom gate is stronger.)
+ *  2. GATE PRIOR — org-default app policy / no session policy = `default`; a custom policy =
+ *     `custom`. This is a documented PRIOR, not a proven ordering: org-default is more-often-than-
+ *     not the looser gate, so it scores as higher-risk — but the model carries no rule/factor data
+ *     (M15), so this flags a divergence, NOT a proven weakness. ("org default" is NOT
+ *     "unprotected" — it's the org-wide default app sign-on policy.)
  *  3. IaC STATUS — managed vs not-in-Terraform, from coverage. Optional: coverage is a two-input
  *     reconciliation (live vs state), so when it's absent the IaC weight is neutralized.
  */
@@ -17,9 +20,11 @@
 import type { OktaGraph } from "../core/model.js";
 import type { CoverageBucket, SlimCoverageReport } from "./coverage.js";
 
-/** Score weights. Multiplicative so "wide AND weak AND unmanaged" compounds. Pinned at the M8
- * Phase-A checkpoint against the fixture oracle. */
-const WEAK_GATE_MULT = 2;
+/** Score weights. Multiplicative so "wide AND default-gated AND unmanaged" compounds. The gate
+ * multiplier encodes a PRIOR (org-default is the looser gate more often than not), not proof —
+ * M15's factor bands replace it with evidence. Pinned at the M8 Phase-A checkpoint against the
+ * fixture oracle. */
+const DEFAULT_GATE_MULT = 2;
 const UNMANAGED_MULT = 2;
 
 export type GateLabel = "org-default" | "custom" | "none" | "session-policy";
@@ -30,9 +35,11 @@ export interface RiskRow {
   name: string;
   /** Signal 1: blast radius (groups granting an app / apps a group grants). */
   reach: number;
-  /** Signal 2: the specific gate, and whether it's weak or strong. */
+  /** Signal 2: the specific gate (factual label). */
   gate: GateLabel;
-  gateStrength: "weak" | "strong";
+  /** Whether the gate is the org default (`default`) or a custom policy (`custom`). A scoring
+   * PRIOR — org-default is more-often-than-not the looser gate — not a proven weak/strong ordering. */
+  gatePrior: "default" | "custom";
   /** Signal 3: IaC coverage bucket, or "unknown" when no coverage report was supplied. */
   iac: CoverageBucket | "unknown";
   /** Composite risk score (higher = attend first). See weights above. */
@@ -49,8 +56,8 @@ function bucketByNodeId(coverage?: SlimCoverageReport): Map<string, CoverageBuck
   return m;
 }
 
-function score(reach: number, gateStrength: "weak" | "strong", iac: CoverageBucket | "unknown"): number {
-  const gateMult = gateStrength === "weak" ? WEAK_GATE_MULT : 1;
+function score(reach: number, gatePrior: "default" | "custom", iac: CoverageBucket | "unknown"): number {
+  const gateMult = gatePrior === "default" ? DEFAULT_GATE_MULT : 1;
   const iacMult = iac === "unmanaged" ? UNMANAGED_MULT : 1;
   return reach * gateMult * iacMult;
 }
@@ -107,16 +114,16 @@ export function rankRisk(graph: OktaGraph, coverage?: SlimCoverageReport): RiskR
       const reach = groupsByApp.get(node.id)?.size ?? 0;
       const custom = appsWithCustomPolicy.has(node.id);
       const gate: GateLabel = custom ? "custom" : "org-default";
-      const gateStrength = custom ? "strong" : "weak";
+      const gatePrior = custom ? "custom" : "default";
       const iac = buckets.get(node.id) ?? "unknown";
-      rows.push({ id: node.id, kind: "App", name: node.name, reach, gate, gateStrength, iac, score: score(reach, gateStrength, iac) });
+      rows.push({ id: node.id, kind: "App", name: node.name, reach, gate, gatePrior, iac, score: score(reach, gatePrior, iac) });
     } else if (node.kind === "Group") {
       const reach = appsByGroup.get(node.id)?.size ?? 0;
       const hasSession = groupsWithSession.has(node.id);
       const gate: GateLabel = hasSession ? "session-policy" : "none";
-      const gateStrength = hasSession ? "strong" : "weak";
+      const gatePrior = hasSession ? "custom" : "default";
       const iac = buckets.get(node.id) ?? "unknown";
-      rows.push({ id: node.id, kind: "Group", name: node.name, reach, gate, gateStrength, iac, score: score(reach, gateStrength, iac) });
+      rows.push({ id: node.id, kind: "Group", name: node.name, reach, gate, gatePrior, iac, score: score(reach, gatePrior, iac) });
     }
   }
 

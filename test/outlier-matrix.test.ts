@@ -46,7 +46,7 @@ const cellFor = (matrix: ReturnType<typeof buildOutlierMatrix>, rowId: string, c
 };
 
 describe("buildOutlierMatrix", () => {
-  it("marks the dominant custom cell and flags the org-default cell as weaker-than-peers", () => {
+  it("marks the dominant custom cell and flags the org-default cell as default-while-peers-custom", () => {
     const matrix = buildOutlierMatrix(
       outlierGraph({ grants: { G: ["x", "b1", "b2", "b3"] }, protects: { P1: ["b1", "b2", "b3"] } }),
     );
@@ -63,9 +63,9 @@ describe("buildOutlierMatrix", () => {
     const def = cellFor(matrix, "G", ORG_DEFAULT_COL);
     expect(def.count).toBe(1);
     expect(def.appIds).toEqual(["x"]);
-    expect(def.severity).toBe("weaker-than-peers");
+    expect(def.severity).toBe("default-while-peers-custom");
 
-    // Agreement with the ranked table: x is the weaker-than-peers outlier there too.
+    // Agreement with the ranked table: x is the default-while-peers-custom outlier there too.
     expect(findPolicyOutliers(outlierGraph({ grants: { G: ["x", "b1", "b2", "b3"] }, protects: { P1: ["b1", "b2", "b3"] } })).rows[0]!.appId).toBe("x");
   });
 
