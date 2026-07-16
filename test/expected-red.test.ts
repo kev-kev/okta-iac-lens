@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import { trace, traceApp, traceUser, summarize } from "../src/core/access-paths.js";
 import { resolveUserDirectAppsFromState } from "../src/inputs/load-resources.js";
 import { computeCoverage } from "../src/analysis/coverage.js";
+import { generateImportBlocks } from "../src/analysis/import-blocks.js";
 import {
   realStateGraph,
   realStateResources,
@@ -99,29 +100,32 @@ describe("M13 — greened red (was M11 Phase D `it.fails`; now passes via the di
   });
 });
 
-describe("M14 — armed red (expected-fail until the Phase D fixture flip)", () => {
-  it.fails(
-    "M14: absorbed plural click-ops pair (Confluence/Contractors) is managed AND annotated viaPluralResource",
-    () => {
-      // Ground truth AFTER a post-click-ops state re-export: `okta_app_group_assignments` re-reads
-      // ALL of Confluence's live groups on refresh (the CLAUDE.md gotcha), so the click-ops
-      // Contractors→Confluence assignment is absorbed into state and reported `managed` — and Phase A's
-      // provenance flag tags it `viaPluralResource` so the absorption is annotated, not silent.
-      //
-      // Expected-fail on TWO counts until Phase D lands the re-exported fixtures + code together:
-      //   - committed fixtures today: the pair is `unmanaged` (state's plural block holds only
-      //     Engineering) — see the documenting test below.
-      //   - fixtures-without-code: it would be `managed` but UNFLAGGED.
-      // Greens only when the re-export makes it `managed` AND Phase A's flag rides through. Delete
-      // the `.fails` marker then (move to a greened-reds block).
-      const cov = computeCoverage(realLiveResources(), realStateResources());
-      const pair = cov.items.find(
-        (i) => i.kind === "AppGroupAssignment" && i.name === "Confluence / Contractors",
-      );
-      expect(pair?.bucket).toBe("managed");
-      expect(pair?.viaPluralResource).toBe(true);
-    },
-  );
+describe("M14 — greened red #8 (was Phase B `it.fails`; greened by the Phase D fixture flip)", () => {
+  it("M14: absorbed plural click-ops pair (Confluence/Contractors) is managed AND annotated viaPluralResource", () => {
+    // Ground truth after the post-click-ops state re-export: `okta_app_group_assignments` re-reads
+    // ALL of Confluence's live groups on refresh (the CLAUDE.md gotcha), so the click-ops
+    // Contractors→Confluence assignment is absorbed into state and reported `managed`. Phase A's
+    // provenance flag tags it `viaPluralResource` so the absorption is ANNOTATED, not silent.
+    const cov = computeCoverage(realLiveResources(), realStateResources());
+    const pair = cov.items.find(
+      (i) => i.kind === "AppGroupAssignment" && i.name === "Confluence / Contractors",
+    );
+    expect(pair?.bucket).toBe("managed");
+    expect(pair?.viaPluralResource).toBe(true);
+  });
+
+  it("the absorbed pair emits NO import block — the viaPluralResource flag IS the honest mitigation", () => {
+    // Presence-only coverage structurally cannot DETECT drift the plural resource absorbs, so the
+    // pair is `managed` and generates no import block (PLAN.md known risk 3). Annotation, not
+    // detection, is the deliverable: the flag keeps this from being a silent 100%.
+    const cov = computeCoverage(realLiveResources(), realStateResources());
+    const pair = cov.items.find(
+      (i) => i.kind === "AppGroupAssignment" && i.name === "Confluence / Contractors",
+    );
+    const tf = generateImportBlocks(cov, realLiveResources());
+    // The import id for an app-group assignment is `${appId}/${groupId}` === the coverage item key.
+    expect(tf).not.toContain(pair!.key);
+  });
 });
 
 describe("M11 Phase D — predictions that did NOT reproduce (closed; see PLAN Phase D)", () => {
@@ -157,17 +161,8 @@ describe("M11 Phase D — predictions that did NOT reproduce (closed; see PLAN P
     expect(builtInGroups.every((g) => g.bucket === "excluded")).toBe(true);
   });
 
-  it("plural-sourced click-ops drift is CAUGHT as unmanaged here, not silently absorbed", () => {
-    // Prediction #6 (plural okta_app_group_assignments absorbs drift -> silent 100% managed)
-    // does NOT reproduce with the committed fixtures. The click-ops Contractors group added to
-    // Confluence is present LIVE but the committed sanitized state's plural block holds only
-    // Engineering, so coverage flags Confluence/Contractors as `unmanaged` — the opposite of the
-    // predicted absorption. The M14 silent-absorption red needs a state RE-EXPORT taken after the
-    // click-ops add (the plural resource reads ALL live groups on refresh). See PLAN Phase D note.
-    const cov = computeCoverage(realLiveResources(), realStateResources());
-    const confContractors = cov.items.find(
-      (i) => i.kind === "AppGroupAssignment" && i.name === "Confluence / Contractors",
-    );
-    expect(confContractors?.bucket).toBe("unmanaged");
-  });
+  // Prediction #6 (plural okta_app_group_assignments absorbs click-ops drift) DID reproduce once
+  // the state was re-exported after the click-ops add — it moved out of this "did NOT reproduce"
+  // block and greened M14 red #8 above (managed + viaPluralResource, no import block). Its former
+  // committed-fixtures assertion (Confluence/Contractors `unmanaged`) is superseded by absorption.
 });
