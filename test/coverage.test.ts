@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { computeCoverage, countIndividualAssignments } from "../src/analysis/coverage.js";
 import type { CoverageBucket, CoverageReport, ResourceKind } from "../src/analysis/coverage.js";
 import type { ParsedResource } from "../src/core/parse-tfstate.js";
-import { liveResources, stateResources } from "./fixture.js";
+import { liveResources, realLiveResources, realStateResources, stateResources } from "./fixture.js";
 
 const live = liveResources();
 const state = stateResources();
@@ -183,6 +183,63 @@ describe("computeCoverage — ordering regressions", () => {
     const item = report.items.find((i) => i.key === "p-unused");
     expect(item?.bucket).toBe("managed");
     expect(kindRow(report, "AppAuthPolicy")).toMatchObject({ managed: 2, excluded: 0, stale: 0 });
+  });
+});
+
+// --- M14 Phase A: plural-resource provenance (viaPluralResource) ---
+
+describe("computeCoverage — plural-resource provenance (M14)", () => {
+  // A live assignment (map-api never sets the flag) + a state assignment carrying it, same key.
+  const liveAssign: ParsedResource = {
+    kind: "AppGroupAssignment",
+    address: "okta-api:app_group_assignment/a-gh/g-plural",
+    appId: "a-gh",
+    groupId: "g-plural",
+  };
+  const statePluralAssign: ParsedResource = {
+    kind: "AppGroupAssignment",
+    address: "okta_app_group_assignments.x",
+    appId: "a-gh",
+    groupId: "g-plural",
+    viaPluralResource: true,
+  };
+
+  it("flags a managed pair from the STATE-side plural record (managed embeds the live record, which lacks the flag)", () => {
+    const report = computeCoverage([...live, liveAssign], [...state, statePluralAssign]);
+    const item = report.items.find((i) => i.key === "a-gh/g-plural");
+    expect(item?.bucket).toBe("managed");
+    expect(item?.viaPluralResource).toBe(true);
+  });
+
+  it("flags a stale plural pair (state-only)", () => {
+    const report = computeCoverage(live, [...state, statePluralAssign]);
+    const item = report.items.find((i) => i.key === "a-gh/g-plural");
+    expect(item?.bucket).toBe("stale");
+    expect(item?.viaPluralResource).toBe(true);
+  });
+
+  it("never flags a live-only (unmanaged) pair — the flag is a state-side concept", () => {
+    const report = computeCoverage([...live, liveAssign], state);
+    const item = report.items.find((i) => i.key === "a-gh/g-plural");
+    expect(item?.bucket).toBe("unmanaged");
+    expect(item?.viaPluralResource).toBeUndefined();
+  });
+
+  it("leaves singular-sourced managed pairs unflagged", () => {
+    const report = computeCoverage(live, state);
+    for (const item of report.items.filter((i) => i.kind === "AppGroupAssignment")) {
+      expect(item.viaPluralResource).toBeUndefined();
+    }
+  });
+
+  it("flags Confluence/Engineering managed in the real fixtures (plural-sourced today)", () => {
+    // Confluence's assignments come from the plural `okta_app_group_assignments.confluence_groups`.
+    const report = computeCoverage(realLiveResources(), realStateResources());
+    const confluenceEng = report.items.find(
+      (i) => i.kind === "AppGroupAssignment" && i.name === "Confluence / Engineering",
+    );
+    expect(confluenceEng?.bucket).toBe("managed");
+    expect(confluenceEng?.viaPluralResource).toBe(true);
   });
 });
 

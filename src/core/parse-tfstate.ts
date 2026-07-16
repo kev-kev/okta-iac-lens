@@ -69,7 +69,21 @@ export type ParsedResource =
       /** Okta lifecycle status; undefined => ACTIVE. */
       status?: string;
     }
-  | { kind: "AppGroupAssignment"; address: string; appId: string; groupId: string }
+  | {
+      kind: "AppGroupAssignment";
+      address: string;
+      appId: string;
+      groupId: string;
+      /**
+       * Live-only-analogue provenance: set (only) when this pair came from the PLURAL
+       * `okta_app_group_assignments` resource. That resource re-reads ALL groups assigned to
+       * the app from the API on every refresh (the CLAUDE.md provider gotcha), so a click-ops
+       * assignment gets absorbed into state and would be reported `managed` — a silent 100%.
+       * Coverage carries this flag through so every surface can caveat "absorbs click-ops drift".
+       * Unset on the singular `okta_app_group_assignment` arm.
+       */
+      viaPluralResource?: true;
+    }
   /**
    * Individual user -> app assignment (`okta_app_user`). NOT a graph node/edge — a user is never
    * a graph node (see model.ts / CLAUDE.md scale rule). Captured so it is COUNTED (coverage +
@@ -237,7 +251,14 @@ function normalizeResource(r: RawResource): ParsedResource[] {
       for (const g of groups) {
         if (g && typeof g === "object") {
           const groupId = str((g as { id?: unknown }).id);
-          if (groupId) records.push({ kind: "AppGroupAssignment", address, appId, groupId });
+          if (groupId)
+            records.push({
+              kind: "AppGroupAssignment",
+              address,
+              appId,
+              groupId,
+              viaPluralResource: true,
+            });
         }
       }
       return records;

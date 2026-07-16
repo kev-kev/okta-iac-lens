@@ -36,6 +36,14 @@ export interface CoverageItemBase {
   bucket: CoverageBucket;
   /** Why a live-only record was excluded. Set iff `bucket === "excluded"`. */
   reason?: string;
+  /**
+   * AppGroupAssignment provenance: set (only) when the STATE-side record came from the plural
+   * `okta_app_group_assignments` resource, which re-reads ALL assigned groups on refresh and so
+   * absorbs click-ops drift into state (the CLAUDE.md gotcha). Present on `managed`/`stale` items
+   * only — `unmanaged`/`excluded` are live-only and can never carry it. Surfaces drive the
+   * "absorbs click-ops drift" caveat off this flag.
+   */
+  viaPluralResource?: true;
 }
 
 export interface CoverageItem extends CoverageItemBase {
@@ -212,6 +220,12 @@ function makeItem(
   bucket: CoverageBucket,
   names: Map<string, string>,
   reason?: string,
+  /**
+   * State-side record for provenance. For `managed`, `resource` is the LIVE record (which lacks
+   * the flag — the live path has no plural resource), so the `viaPluralResource` flag must be read
+   * from here. For `stale` it's the same object as `resource`. Undefined for live-only buckets.
+   */
+  stateR?: ParsedResource,
 ): CoverageItem {
   const item: CoverageItem = {
     kind: resource.kind,
@@ -221,6 +235,9 @@ function makeItem(
     resource,
   };
   if (reason) item.reason = reason;
+  if (stateR?.kind === "AppGroupAssignment" && stateR.viaPluralResource) {
+    item.viaPluralResource = true;
+  }
   return item;
 }
 
@@ -275,9 +292,9 @@ export function computeCoverage(
       // ORDER IS LOAD-BEARING: presence decides managed/stale first; exclusion is only
       // consulted for live-only records. Do not reorder.
       if (liveR && stateR) {
-        items.push(makeItem(liveR, "managed", names));
+        items.push(makeItem(liveR, "managed", names, undefined, stateR));
       } else if (stateR) {
-        items.push(makeItem(stateR, "stale", names));
+        items.push(makeItem(stateR, "stale", names, undefined, stateR));
       } else if (liveR) {
         const reason = exclusionReason(liveR, ctx);
         items.push(makeItem(liveR, reason ? "excluded" : "unmanaged", names, reason ?? undefined));
