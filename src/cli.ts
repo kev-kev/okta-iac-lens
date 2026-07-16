@@ -19,7 +19,9 @@ import {
   loadLiveResources,
   loadStateResources,
   loadUserMembership,
+  resolveUserDirectApps,
 } from "./inputs/load-resources.js";
+import { HttpOktaReader, readOktaConfigFromEnv } from "./inputs/okta-api.js";
 import {
   renderAppTrace,
   renderCoverage,
@@ -111,8 +113,13 @@ program
             throw new Error("trace --user requires --source okta (Terraform state has no users).");
           }
           const graph = await loadGraph(opts);
-          const membership = await loadUserMembership(opts.user);
-          const result = traceUser(graph, membership);
+          // One reader for the whole user trace: membership + the per-app individual-assignment
+          // scope check. Both are per-user, read-only GETs — the PII rail holds (no bulk sweep, no
+          // node).
+          const reader = new HttpOktaReader(readOktaConfigFromEnv());
+          const membership = await loadUserMembership(opts.user, reader);
+          const directApps = await resolveUserDirectApps(reader, graph, membership);
+          const result = traceUser(graph, membership, { directApps });
           console.log(
             opts.app != null
               ? renderUserAppExplain(explainUserApp(graph, result, opts.app), format)
@@ -142,7 +149,7 @@ program
 program
   .command("risk")
   .description(
-    "Rank apps and groups by composite risk: reach × gate strength × IaC status (widest reach, weakest gate, not-in-Terraform first).",
+    "Rank apps and groups by composite risk: reach × gate prior (org-default vs custom) × IaC status (widest reach, default-gated, not-in-Terraform first).",
   )
   .addOption(sourceOption())
   .option("--state <path>", "path to `terraform show -json` output (tfstate source, or the baseline for --iac)")

@@ -101,7 +101,7 @@ const KIND_ORDER: ResourceKind[] = [
 /**
  * Count individual (`okta_app_user`) user→app assignments in a resource set — the unmodeled
  * access channel (M11 review). Surfaced as "N present, not modeled" so it is never silently
- * dropped; the per-user trace inclusion is M13's live appLinks diff. PURE.
+ * dropped; the per-user trace inclusion is M13's per-app `scope: USER` check. PURE.
  */
 export function countIndividualAssignments(resources: ParsedResource[]): number {
   return resources.filter((r) => r.kind === "AppUserAssignment").length;

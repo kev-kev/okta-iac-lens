@@ -2,8 +2,8 @@
  * OutlierMatrix — the Group×Policy heatmap (M10 stretch). A bounded table (columns ≤ 8, rows ≤ 30
  * by construction in buildOutlierMatrix) so it never scales with org size. Each cell's heat = the
  * share of that group's apps on that policy; the dominant cell is outlined; divergent cells are
- * tinted (amber = weaker-than-peers, slate = differs). Clicking a non-empty cell drills into its
- * apps via the shared CohortList.
+ * tinted (amber = default-while-peers-custom, slate = differs). Clicking a non-empty cell drills
+ * into its apps via the shared CohortList.
  */
 import type { MatrixCell, OutlierMatrix as MatrixModel } from "./outlier-matrix.js";
 
@@ -12,7 +12,7 @@ function cellStyle(cell: MatrixCell): React.CSSProperties {
   if (cell.count === 0) return {};
   const alpha = 0.15 + 0.55 * cell.share;
   const rgb =
-    cell.severity === "weaker-than-peers"
+    cell.severity === "default-while-peers-custom"
       ? "245, 158, 11" // amber (--bucket-unmanaged)
       : cell.severity === "differs-from-peers"
         ? "148, 163, 184" // slate
@@ -76,9 +76,13 @@ export function OutlierMatrix({
       </table>
       <p className="hint outlier-note">
         Heat = share of the group's apps on that policy. The <span className="matrix-key is-dominant" />{" "}
-        outlined cell is the dominant policy; <span className="matrix-key sev-weaker-than-peers" /> weaker-than-peers,{" "}
+        outlined cell is the dominant policy; <span className="matrix-key sev-default-while-peers-custom" /> default-while-peers-custom,{" "}
         <span className="matrix-key sev-differs-from-peers" /> differs. Click a cell to list its apps.
         {matrix.hiddenRowCount > 0 && ` · ${matrix.hiddenRowCount} more group(s) not shown (largest audiences first).`}
+      </p>
+      <p className="hint outlier-note">
+        Gate strength is a heuristic prior (org-default vs custom policy), not a factor-based verdict
+        (M15) — a divergence, not a proven weakness.
       </p>
     </div>
   );

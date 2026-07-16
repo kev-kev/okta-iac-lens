@@ -141,7 +141,7 @@ export function Explorer({
             const meta = rr
               ? `reach ${rr.reach} · ${rr.gate}${bucket && bucket !== "managed" ? ` · ${bucket}` : ""}`
               : `${n.kind}${bucket && bucket !== "managed" ? ` · ${bucket}` : ""}`;
-            const rowClass = `explorer-row${rr?.gateStrength === "weak" ? " is-weak-gate" : ""}`;
+            const rowClass = `explorer-row${rr?.gatePrior === "default" ? " is-default-gate" : ""}`;
             const name = <HighlightedText text={n.name} query={searching ? query : ""} />;
             return focusable ? (
               <button type="button" className={rowClass} onClick={() => onFocus(n.id)}>

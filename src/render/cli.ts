@@ -122,8 +122,17 @@ const RUNTIME_CAVEAT =
   'Note: "provisioned to / gated by" reflects assignment; runtime policy conditions ' +
   "(MFA, device, network) are not evaluated here.";
 
+/** Honesty footnote for any surface that scores/labels a gate by the org-default-vs-custom prior. */
+const GATE_PRIOR_CAVEAT =
+  "Note: gate strength is a heuristic prior (org-default vs custom policy), not a factor-based " +
+  "verdict — M15. This flags a divergence, not a proven weakness.";
+
+const INDIVIDUAL_VIA = "individual assignment (okta_app_user — not a group grant)";
+
 export function renderUserTrace(result: UserTraceResult, format: OutputFormat): string {
   if (format === "json") return JSON.stringify(result, null, 2);
+
+  const individualIds = new Set(result.individualApps.map((a) => a.id));
 
   const lines: string[] = [];
   lines.push(`User: ${result.user.login} (${result.user.id})`);
@@ -134,12 +143,19 @@ export function renderUserTrace(result: UserTraceResult, format: OutputFormat): 
     lines.push("  (none)");
   } else {
     for (const app of result.apps) {
-      const via = result.viaGroups
-        .filter((v) => v.apps.some((a) => a.id === app.id))
-        .map((v) => v.group.name)
-        .join(", ");
+      const via = individualIds.has(app.id)
+        ? INDIVIDUAL_VIA
+        : result.viaGroups
+            .filter((v) => v.apps.some((a) => a.id === app.id))
+            .map((v) => v.group.name)
+            .join(", ");
       lines.push(
         `  - ${app.name} (${app.id})  ·  via: ${via}  ·  app gate: ${policyLabel(result.appAuthPolicies[app.id])}`,
+      );
+    }
+    if (result.individualApps.length > 0) {
+      lines.push(
+        `  (+${result.individualApps.length} via individual assignment (okta_app_user) — not a group grant)`,
       );
     }
   }
@@ -216,13 +232,13 @@ export function renderRisk(rows: RiskRow[], format: OutputFormat): string {
   if (format === "json") return JSON.stringify(rows, null, 2);
 
   const lines: string[] = [];
-  lines.push("Risk-ranked resources — widest reach × weakest gate × not-in-Terraform first");
+  lines.push("Risk-ranked resources — widest reach × default-gate prior × not-in-Terraform first");
   lines.push("");
 
   lines.push("  " + "#".padStart(3) + "  " + "resource".padEnd(24) + "kind".padEnd(7) + "reach".padStart(6) + "  " + "gate".padEnd(25) + "iac".padEnd(11) + "score");
   rows.forEach((r, i) => {
     const iac = r.iac === "unknown" ? "n/a" : r.iac;
-    const gate = `${r.gate} (${r.gateStrength})`;
+    const gate = `${r.gate} (${r.gatePrior})`;
     lines.push(
       "  " +
         `${i + 1}`.padStart(3) + "  " +
@@ -234,6 +250,8 @@ export function renderRisk(rows: RiskRow[], format: OutputFormat): string {
         `${r.score}`,
     );
   });
+  lines.push("");
+  lines.push(GATE_PRIOR_CAVEAT);
   return lines.join("\n");
 }
 
@@ -252,7 +270,7 @@ export function renderOutliers(report: OutlierReport, format: OutputFormat): str
   } else {
     lines.push(
       "  " + "#".padStart(3) + "  " + "app".padEnd(24) + "policy".padEnd(16) +
-        "severity".padEnd(20) + "groups".padStart(6) + "  score",
+        "severity".padEnd(28) + "groups".padStart(6) + "  score",
     );
     report.rows.forEach((r, i) => {
       lines.push(
@@ -260,7 +278,7 @@ export function renderOutliers(report: OutlierReport, format: OutputFormat): str
           `${i + 1}`.padStart(3) + "  " +
           r.appName.slice(0, 23).padEnd(24) +
           (r.appPolicyName ?? "org default").slice(0, 15).padEnd(16) +
-          r.severity.padEnd(20) +
+          r.severity.padEnd(28) +
           `${r.findingCount}`.padStart(6) + "  " +
           `${r.score}`,
       );
@@ -283,6 +301,7 @@ export function renderOutliers(report: OutlierReport, format: OutputFormat): str
     "Note: divergence compares WHICH policy applies, not policy contents — custom-vs-custom",
   );
   lines.push("mismatches may be intentional. Policy rule strength is not evaluated.");
+  lines.push(GATE_PRIOR_CAVEAT);
   return lines.join("\n");
 }
 

@@ -73,7 +73,7 @@ export type ParsedResource =
   /**
    * Individual user -> app assignment (`okta_app_user`). NOT a graph node/edge — a user is never
    * a graph node (see model.ts / CLAUDE.md scale rule). Captured so it is COUNTED (coverage +
-   * summary notice), never silently dropped. The per-user trace inclusion is M13's appLinks diff.
+   * summary notice), never silently dropped. The per-user trace inclusion is M13's scope check.
    */
   | { kind: "AppUserAssignment"; address: string; appId: string; userId: string }
   /**

@@ -10,9 +10,11 @@
  *
  * What "divergence" means here — and, deliberately, what it does NOT mean:
  *  - We compare WHICH auth policy applies, never policy CONTENTS. The model carries no rule /
- *    factor / re-auth data (M10 scope decision), so "weaker-than-peers" is exactly rank-risk's
- *    binary: org-default while ≥2/3 of peers sit behind a custom policy. Custom-vs-custom
- *    mismatches are reported as "differs-from-peers" — the relative strength is unknown.
+ *    factor / re-auth data (M15 scope), so "default-while-peers-custom" is exactly rank-risk's
+ *    binary: org-default while ≥2/3 of peers sit behind a custom policy. That is a documented
+ *    *prior* (org-default is more-often-than-not the looser gate), a divergence — NOT a proven
+ *    weakness. Custom-vs-custom mismatches are reported as "differs-from-peers" — relative
+ *    strength unknown either way.
  *  - ASYMMETRY, by design: an app behind a CUSTOM policy whose peers are predominantly
  *    org-default is NEVER flagged. That's the expected crown-jewel pattern (one hardened app
  *    among ordinary ones); flagging it would train users to ignore the report.
@@ -28,11 +30,15 @@ import type { GraphNode, OktaGraph } from "../core/model.js";
 export const MIN_PEERS = 3;
 /** Per-app evidence is bounded (a hub app can sit in hundreds of peer sets); score counts ALL. */
 export const EVIDENCE_CAP = 8;
-/** Score weights, echoing rank-risk's WEAK_GATE_MULT: the weaker-direction divergence counts double. */
-const WEAKER_MULT = 2;
+/**
+ * Score weights, echoing rank-risk's DEFAULT_GATE_MULT: the org-default-among-custom-peers
+ * divergence counts double. This encodes a PRIOR — org-default is more-often-than-not the looser
+ * gate — not a proven ordering. M15's factor bands replace the prior with evidence.
+ */
+const DEFAULT_VS_CUSTOM_MULT = 2;
 const DIFFERS_MULT = 1;
 
-export type OutlierSeverity = "weaker-than-peers" | "differs-from-peers";
+export type OutlierSeverity = "default-while-peers-custom" | "differs-from-peers";
 
 /** One divergent peer set: "in {groupName} ({peerCount} apps): {dominantCount}/{peerCount} peers behind {dominantPolicyName}". */
 export interface OutlierFinding {
@@ -190,7 +196,7 @@ export function findPolicyOutliers(graph: OktaGraph): OutlierReport {
     for (const appId of peers) {
       const appKey = policyByApp.get(appId) ?? null;
       if (appKey === dominant.key) continue;
-      const severity: OutlierSeverity = appKey === null ? "weaker-than-peers" : "differs-from-peers";
+      const severity: OutlierSeverity = appKey === null ? "default-while-peers-custom" : "differs-from-peers";
       const finding: OutlierFinding = {
         groupId,
         groupName,
@@ -202,8 +208,8 @@ export function findPolicyOutliers(graph: OktaGraph): OutlierReport {
       };
       let entry = acc.get(appId);
       if (!entry) acc.set(appId, (entry = { score: 0, severity, findings: [] }));
-      entry.score += (severity === "weaker-than-peers" ? WEAKER_MULT : DIFFERS_MULT) * dominant.count;
-      if (severity === "weaker-than-peers") entry.severity = "weaker-than-peers";
+      entry.score += (severity === "default-while-peers-custom" ? DEFAULT_VS_CUSTOM_MULT : DIFFERS_MULT) * dominant.count;
+      if (severity === "default-while-peers-custom") entry.severity = "default-while-peers-custom";
       entry.findings.push(finding);
     }
   }

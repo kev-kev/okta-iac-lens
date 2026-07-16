@@ -98,7 +98,7 @@ export function OutliersView({
         ) : (
           <>
             <div className="list-head">
-              <span>ranked by divergence score (weaker-than-peers counts double)</span>
+              <span>ranked by divergence score (default-while-peers-custom counts double)</span>
             </div>
             <VirtualList
               items={report.rows}
@@ -108,7 +108,7 @@ export function OutliersView({
               renderRow={(r) => (
                 <button
                   type="button"
-                  className={`explorer-row${r.severity === "weaker-than-peers" ? " is-weak-gate" : ""}${
+                  className={`explorer-row${r.severity === "default-while-peers-custom" ? " is-default-gate" : ""}${
                     r.appId === selectedAppId ? " is-selected" : ""
                   }`}
                   onClick={() => setSelectedAppId(r.appId)}
@@ -123,7 +123,9 @@ export function OutliersView({
             />
             <p className="hint outlier-note">
               Divergence compares <strong>which</strong> policy applies, not policy contents —
-              custom-vs-custom mismatches may be intentional.
+              custom-vs-custom mismatches may be intentional. Gate strength is a heuristic prior
+              (org-default vs custom policy), not a factor-based verdict (M15): this flags a
+              divergence, not a proven weakness.
             </p>
           </>
         )}

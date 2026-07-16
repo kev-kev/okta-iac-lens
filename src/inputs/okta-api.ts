@@ -90,6 +90,14 @@ export interface RawUser {
 }
 
 /**
+ * How a user is assigned to an app, from `GET /api/v1/apps/{appId}/users/{userId}` `scope`:
+ * `USER` = an INDIVIDUAL (direct) assignment; `GROUP` = inherited through a group. This is the
+ * honest individual-assignment signal for the per-user trace (M13 Phase E) — it replaced the
+ * appLinks design, which returns an empty list for admin-assigned users.
+ */
+export type AppAssignmentScope = "USER" | "GROUP";
+
+/**
  * Narrow read-only interface. `map-api.ts` and tests depend on this, not on
  * `HttpOktaReader` directly, so fixtures can implement it with zero network.
  */
@@ -115,6 +123,14 @@ export interface OktaUserReader {
   getUserByLogin(login: string): Promise<RawUser>;
   /** `GET /api/v1/users/{userId}/groups` — the group ids this user belongs to. */
   listUserGroupIds(userId: string): Promise<string[]>;
+  /**
+   * `GET /api/v1/apps/{appId}/users/{userId}` — this user's assignment to ONE app, or `null` if not
+   * assigned (404). The `scope` distinguishes an INDIVIDUAL (`USER`) assignment from a group-
+   * inherited (`GROUP`) one — the individual-assignment signal for `traceUser`. A plain read GET, so
+   * `smoke --verify-readonly` is unaffected. Per-user, never the bulk `/apps/{id}/users` sweep (the
+   * PII rail). Scope: `okta.apps.read`.
+   */
+  getUserAppAssignmentScope(userId: string, appId: string): Promise<AppAssignmentScope | null>;
 }
 
 export interface OktaReaderConfig {
@@ -241,6 +257,23 @@ export class HttpOktaReader implements OktaReader, OktaUserReader {
       `/api/v1/users/${encodeURIComponent(userId)}/groups`,
     );
     return groups.map((g) => g.id);
+  }
+
+  async getUserAppAssignmentScope(
+    userId: string,
+    appId: string,
+  ): Promise<AppAssignmentScope | null> {
+    const res = await this.get(
+      `/api/v1/apps/${encodeURIComponent(appId)}/users/${encodeURIComponent(userId)}`,
+    );
+    if (res.status === 404) return null; // user not assigned to this app
+    if (!res.ok) {
+      throw new Error(
+        `Okta API request failed: GET /api/v1/apps/${appId}/users/${userId} -> ${res.status} ${res.statusText}`,
+      );
+    }
+    const au = (await res.json()) as { scope?: string };
+    return au.scope === "USER" ? "USER" : "GROUP";
   }
 
   listGroups(): Promise<RawGroup[]> {

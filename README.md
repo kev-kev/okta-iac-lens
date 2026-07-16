@@ -40,11 +40,13 @@ current milestone.
   network), and the output says so.
 - **Risk-ranked landing** (M8) — `risk` (CLI) and the viewer inventory rank apps and groups by a
   composite an IT engineer cares about: **reach** (how many groups grant an app / apps a group
-  grants) × **gate strength** (org-default / no session policy = weak; a custom policy = strong)
-  × **IaC status** (not-in-Terraform, from coverage). "Widest reach, weakest gate, not in
-  Terraform" sorts first. The ranking is **legible, not a black box** — every row shows the raw
-  signals next to the score. The focus view also reads blast-radius in ticket words: *"42 apps
-  and 3 rules depend on this group."*
+  grants) × **gate prior** (org-default / no session policy = `default`; a custom policy =
+  `custom`) × **IaC status** (not-in-Terraform, from coverage). "Widest reach, default gate, not in
+  Terraform" sorts first. The gate prior is a **documented heuristic** — org-default is more-often-
+  than-not the looser gate, so it scores higher-risk — **not a proven weak/strong verdict** (the
+  model carries no rule/factor data yet; that's M15). The ranking is **legible, not a black box** —
+  every row shows the raw signals next to the score. The focus view also reads blast-radius in
+  ticket words: *"42 apps and 3 rules depend on this group."*
 - **Live mode + visual user trace** (M9) — run `npm run web` with credentials and the viewer gains a
   **local read-only server** (browser → localhost → Okta): **Load tenant live** pulls the tenant with
   no export step, and **tracing a user by email** renders *their* access **on the canvas** — their
@@ -54,10 +56,11 @@ current milestone.
   before: fully offline, file-open only.
 - **Policy outliers** (M10) — `outliers` (CLI) and a ranked table in the viewer surface apps whose
   auth policy **diverges from their peers**, where peers = the apps granted to the same group
-  (same audience, so the weakest gate is that audience's effective exposure). An org-default app
-  among peers that are ≥2/3 behind a custom policy is flagged **weaker-than-peers**; custom-vs-custom
-  mismatches are **differs-from-peers** (relative strength unknown — the model deliberately carries
-  no policy contents, and the output says so). Every row carries its evidence: *"in Engineering
+  (same audience, so the org default is that audience's likely-loosest gate). An org-default app
+  among peers that are ≥2/3 behind a custom policy is flagged **default-while-peers-custom**;
+  custom-vs-custom mismatches are **differs-from-peers**. Both are **divergences, not proven
+  weaknesses** — the model deliberately carries no policy contents (rule/factor strength lands in
+  M15), and every surface says so. Every row carries its evidence: *"in Engineering
   (11 apps): 9/11 peers behind Strict-Auth."* A hardened app among org-default peers is never
   flagged — that's the expected crown-jewel pattern, not an outlier. The viewer adds a bounded
   **Group×Policy heatmap** (top policies + Other + Org default as columns, biggest audiences as
@@ -136,7 +139,7 @@ npm run dev -- trace    --app   "GitHub"      --state fixtures/sample-tenant.tfs
 npm run dev -- trace    --user  "ada@example.com" --source okta
 npm run dev -- trace    --user  "ada@example.com" --app "GitHub" --source okta  # explain one app
 
-# risk-ranked inventory: reach × gate strength × IaC status (widest/weakest/unmanaged first)
+# risk-ranked inventory: reach × gate prior × IaC status (widest/default-gated/unmanaged first)
 npm run dev -- risk --source tfstate --state fixtures/sample-tenant.tfstate.json
 npm run dev -- risk --iac --state fixtures/sample-tenant.tfstate.json   # + IaC signal (live vs state)
 

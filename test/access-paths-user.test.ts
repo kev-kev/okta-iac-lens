@@ -8,11 +8,19 @@
 
 import { describe, expect, it } from "vitest";
 import { traceUser, type UserRef } from "../src/core/access-paths.js";
+import type { AppNode } from "../src/core/model.js";
 import { graphFromFixture } from "./fixture.js";
 
 const graph = graphFromFixture();
 const alice: UserRef = { id: "u-alice", login: "alice@example.com" };
 const names = <T extends { name: string }>(xs: T[]): string[] => xs.map((x) => x.name);
+
+/** Pull a real AppNode out of the fixture graph by name (individual-assignment inputs are AppNodes). */
+const appByName = (name: string): AppNode => {
+  const app = graph.nodes.find((n): n is AppNode => n.kind === "App" && n.name === name);
+  if (!app) throw new Error(`fixture has no app "${name}"`);
+  return app;
+};
 
 describe("traceUser", () => {
   it("member of Engineering: GitHub + Datadog; Datadog under Strict-Auth; via eng-rule; Default-MFA", () => {
@@ -65,5 +73,43 @@ describe("traceUser", () => {
     expect(r.apps).toEqual([]);
     expect(r.viaGroups).toEqual([]);
     expect(r.unknownGroupIds).toEqual([]);
+  });
+
+  it("no directApps (default): individualApps is empty and behavior is unchanged", () => {
+    const r = traceUser(graph, { user: alice, groupIds: ["g-eng"] });
+    expect(r.individualApps).toEqual([]);
+    expect(names(r.apps)).toEqual(["Datadog", "GitHub"]); // group-only union, as before
+  });
+
+  it("folds an individually-assigned app into the union and surfaces it separately, with its auth gate", () => {
+    // Contractors grants GitHub only; Datadog is reached SOLELY by individual assignment.
+    const r = traceUser(
+      graph,
+      { user: alice, groupIds: ["g-con"] },
+      { directApps: [appByName("Datadog")] },
+    );
+
+    expect(names(r.apps)).toEqual(["Datadog", "GitHub"]); // union, name order
+    expect(names(r.individualApps)).toEqual(["Datadog"]); // the individual-only channel
+    expect(r.appAuthPolicies["a-dd"]?.name).toBe("Strict-Auth"); // gate resolved for the individual app
+    expect(r.appAuthPolicies["a-gh"]).toBeNull(); // GitHub still org default
+
+    // Provenance stays honest: individual apps have no granting group, so viaGroups is untouched.
+    expect(r.viaGroups).toHaveLength(1);
+    expect(r.viaGroups[0].group.name).toBe("Contractors");
+    expect(names(r.viaGroups[0].apps)).toEqual(["GitHub"]);
+  });
+
+  it("an individually-assigned app already group-reached is deduped and NOT counted as individual", () => {
+    // GitHub is granted by Contractors AND passed as a direct assignment — it's group-reached,
+    // so it stays a single app and does not appear in the individual-only channel.
+    const r = traceUser(
+      graph,
+      { user: alice, groupIds: ["g-con"] },
+      { directApps: [appByName("GitHub")] },
+    );
+
+    expect(names(r.apps)).toEqual(["GitHub"]); // no duplicate
+    expect(r.individualApps).toEqual([]); // group-reached wins over "individual"
   });
 });

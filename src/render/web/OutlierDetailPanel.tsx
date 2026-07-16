@@ -23,7 +23,7 @@ export function OutlierDetailPanel({
       </div>
 
       <div className="cov-summary">
-        <span className={`severity-chip ${row.severity === "weaker-than-peers" ? "is-weaker" : "is-differs"}`}>
+        <span className={`severity-chip ${row.severity === "default-while-peers-custom" ? "is-default-custom" : "is-differs"}`}>
           {row.severity}
         </span>{" "}
         · this app: {row.appPolicyName ?? "org default app sign-on policy"}
@@ -49,6 +49,11 @@ export function OutlierDetailPanel({
       <button type="button" className="file-btn" onClick={() => onOpenApp(row.appId)}>
         View app in graph
       </button>
+
+      <p className="hint outlier-note">
+        Gate strength is a heuristic prior (org-default vs custom policy), not a factor-based verdict
+        (M15). This flags a divergence, not a proven weakness.
+      </p>
     </aside>
   );
 }
