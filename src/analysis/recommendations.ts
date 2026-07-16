@@ -72,6 +72,18 @@ export function recommend(report: SlimCoverageReport): Recommendation[] {
     });
   }
 
+  const pluralCount = report.items.filter((i) => i.viaPluralResource).length;
+  if (pluralCount > 0) {
+    recs.push({
+      severity: "info",
+      title: `${plural(pluralCount, "assignment")} state-tracked via okta_app_group_assignments`,
+      detail:
+        "The plural resource re-reads ALL groups assigned to the app on refresh, so a click-ops " +
+        "assignment is absorbed into state and reported as managed — presence-only coverage can't " +
+        "detect that drift. Treat these pairs' `managed` status as absorbs-drift, not verified.",
+    });
+  }
+
   if (unmanaged === 0 && stale === 0) {
     recs.push({
       severity: "success",

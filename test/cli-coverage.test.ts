@@ -76,4 +76,39 @@ describe("renderCoverage", () => {
     const parsed = JSON.parse(renderCoverage(report, "json"));
     expect(parsed.overall).toMatchObject({ managed: 10, unmanaged: 3 });
   });
+
+  it("renders the plural-drift section + caveat, and carries the flag in JSON", () => {
+    // A managed pair whose STATE record came from the plural okta_app_group_assignments resource.
+    const liveAssign: ParsedResource = {
+      kind: "AppGroupAssignment",
+      address: "okta-api:app_group_assignment/a-gh/g-ops",
+      appId: "a-gh",
+      groupId: "g-ops",
+    };
+    const statePluralAssign: ParsedResource = {
+      kind: "AppGroupAssignment",
+      address: "okta_app_group_assignments.x",
+      appId: "a-gh",
+      groupId: "g-ops",
+      viaPluralResource: true,
+    };
+    const pluralReport = computeCoverage(
+      [...liveResources(), clickOpsGroup, liveAssign],
+      [...stateResources(), statePluralAssign],
+    );
+
+    const text = renderCoverage(pluralReport, "text");
+    expect(text).toContain("absorbs click-ops drift (1)");
+    expect(text).toMatch(/re-reads ALL assigned groups on refresh/);
+    expect(text).toContain("- [AppGroupAssignment] GitHub / Click-Ops (a-gh/g-ops) — managed");
+
+    // --json carries the provenance flag for free (no bespoke serialization).
+    const parsed = JSON.parse(renderCoverage(pluralReport, "json"));
+    const item = parsed.items.find((i: { key: string }) => i.key === "a-gh/g-ops");
+    expect(item.viaPluralResource).toBe(true);
+  });
+
+  it("omits the plural-drift section entirely when no pair is plural-sourced", () => {
+    expect(renderCoverage(report, "text")).not.toContain("absorbs click-ops drift");
+  });
 });

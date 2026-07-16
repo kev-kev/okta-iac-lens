@@ -15,6 +15,7 @@ export function CoveragePanel({ report }: { report: SlimCoverageReport }) {
   const recs = recommend(report);
   const stale = report.items.filter((i) => i.bucket === "stale");
   const excluded = report.items.filter((i) => i.bucket === "excluded");
+  const plural = report.items.filter((i) => i.viaPluralResource);
 
   return (
     <aside className="trace-panel">
@@ -57,12 +58,30 @@ export function CoveragePanel({ report }: { report: SlimCoverageReport }) {
 
       {excluded.length > 0 && (
         <>
-          <h3>Excluded — Okta-managed ({excluded.length})</h3>
+          <h3>Excluded — not Terraform-manageable ({excluded.length})</h3>
           <ul className="trace-apps">
             {excluded.map((i) => (
               <li key={`${i.kind}:${i.key}`}>
                 <span className="app-name">{i.name}</span>
                 {i.reason && <span className="muted">{i.reason}</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {plural.length > 0 && (
+        <>
+          <h3>Via okta_app_group_assignments — absorbs drift ({plural.length})</h3>
+          <p className="muted cov-caveat">
+            The plural resource re-reads ALL assigned groups on refresh, so a click-ops assignment
+            is absorbed into state and reported as managed — coverage can't detect that drift.
+          </p>
+          <ul className="trace-apps">
+            {plural.map((i) => (
+              <li key={`${i.kind}:${i.key}`}>
+                <span className="app-name">{i.name}</span>
+                <span className="muted">{i.bucket}</span>
               </li>
             ))}
           </ul>
