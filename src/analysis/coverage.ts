@@ -14,6 +14,9 @@
  */
 
 import type { ParsedResource } from "../core/parse-tfstate.js";
+import { isBuiltInAppPolicyName } from "./okta-builtins.js";
+
+type AppResource = Extract<ParsedResource, { kind: "App" }>;
 
 export type ResourceKind = ParsedResource["kind"];
 
@@ -159,18 +162,39 @@ function nameOf(r: ParsedResource, names: Map<string, string>): string {
 }
 
 interface LiveContext {
-  /** Non-null `authenticationPolicyId` of every live App — the app-auth policies actually in use. */
-  referencedAuthPolicyIds: Set<string>;
+  /**
+   * Non-null `authenticationPolicyId` of every live App that is Terraform-MANAGEABLE (in state,
+   * or live-only with no exclusion reason). A live-only AppAuthPolicy referenced only by
+   * non-manageable apps (e.g. an excluded built-in console app, were one ever present) is NOT a
+   * real IaC gap. Re-keyed from the old "referenced by ANY live app" (M14: the mis-keyed predicate).
+   */
+  manageableReferencedAuthPolicyIds: Set<string>;
 }
 
-function buildLiveContext(live: ParsedResource[]): LiveContext {
-  const referencedAuthPolicyIds = new Set<string>();
+function buildLiveContext(live: ParsedResource[], stateAppKeys: Set<string>): LiveContext {
+  const manageableReferencedAuthPolicyIds = new Set<string>();
   for (const r of live) {
-    if (r.kind === "App" && r.authenticationPolicyId) {
-      referencedAuthPolicyIds.add(r.authenticationPolicyId);
+    if (r.kind !== "App" || !r.authenticationPolicyId) continue;
+    // Terraform-manageable app = present in state, or live-only and not excluded. On the primary
+    // path App has no exclusion predicate (appExclusionReason → null), so every app qualifies; the
+    // guard is correct-by-construction if the built-in-app contingency ever excludes some.
+    if (stateAppKeys.has(r.id) || appExclusionReason(r) === null) {
+      manageableReferencedAuthPolicyIds.add(r.authenticationPolicyId);
     }
   }
-  return { referencedAuthPolicyIds };
+  return { manageableReferencedAuthPolicyIds };
+}
+
+/**
+ * Whether a live-only App is Okta-managed rather than Terraform-manageable, or null (a real gap).
+ * PRIMARY PATH: always null — the fresh capture shows `/api/v1/apps` returns no built-in apps, so
+ * no catalog identity can be proven to never be a real app. CONTINGENCY (PLAN.md): if a future
+ * capture surfaces built-in apps, add a `BUILT_IN_APP_CATALOG_NAMES.has(r.catalogName)` check here
+ * plus its own fixture-verification assertion. Kept as a named seam so `buildLiveContext` and
+ * `exclusionReason` share one definition of "manageable app".
+ */
+function appExclusionReason(_app: AppResource): string | null {
+  return null;
 }
 
 /**
@@ -186,18 +210,24 @@ function exclusionReason(r: ParsedResource, ctx: LiveContext): string | null {
       return r.groupType != null && r.groupType !== "OKTA_GROUP"
         ? `Okta ${r.groupType} group; not manageable via okta_group`
         : null;
+    case "App":
+      return appExclusionReason(r);
     case "GlobalSessionPolicy":
       return r.system === true
         ? "Okta system global session policy (org default); not managed config"
         : null;
     case "AppAuthPolicy":
-      // Non-system, APP-typed policies reach here (the mapper already dropped the rest). One
-      // attached to no managed app is Okta-created console noise (Okta Dashboard, etc.).
-      return ctx.referencedAuthPolicyIds.has(r.id)
-        ? null
-        : "Okta-created app access policy attached to no managed app";
+      // Non-system, APP-typed policies reach here (the mapper already dropped the rest). Referenced
+      // by a Terraform-manageable app => a real gap (unmanaged). Otherwise excluded — the reason is
+      // IDENTITY-refined only (built-in console name) but the bucket is decided by references alone,
+      // so a custom policy spoof-named "Okta Dashboard" that a real app references still lands here
+      // as null (unmanaged), never a false built-in claim.
+      if (ctx.manageableReferencedAuthPolicyIds.has(r.id)) return null;
+      return isBuiltInAppPolicyName(r.name)
+        ? "access policy of Okta built-in console app — not Terraform-manageable"
+        : "app access policy referenced by no Terraform-manageable app in the live snapshot";
     default:
-      return null; // App, GroupRule, AppGroupAssignment: no exclusion predicate.
+      return null; // GroupRule, AppGroupAssignment: no exclusion predicate.
   }
 }
 
@@ -268,10 +298,14 @@ export function computeCoverage(
   live: ParsedResource[],
   state: ParsedResource[],
 ): CoverageReport {
-  const ctx = buildLiveContext(live);
   const names = buildNameMap(live, state);
   const liveByKind = indexByKind(live);
   const stateByKind = indexByKind(state);
+
+  // App ids present in state — an app there is `managed`, hence Terraform-manageable, so its
+  // auth-policy reference keeps that policy out of the excluded bucket.
+  const stateAppKeys = new Set<string>(stateByKind.get("App")?.keys() ?? []);
+  const ctx = buildLiveContext(live, stateAppKeys);
 
   const items: CoverageItem[] = [];
 

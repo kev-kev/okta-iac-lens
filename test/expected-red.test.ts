@@ -99,6 +99,31 @@ describe("M13 — greened red (was M11 Phase D `it.fails`; now passes via the di
   });
 });
 
+describe("M14 — armed red (expected-fail until the Phase D fixture flip)", () => {
+  it.fails(
+    "M14: absorbed plural click-ops pair (Confluence/Contractors) is managed AND annotated viaPluralResource",
+    () => {
+      // Ground truth AFTER a post-click-ops state re-export: `okta_app_group_assignments` re-reads
+      // ALL of Confluence's live groups on refresh (the CLAUDE.md gotcha), so the click-ops
+      // Contractors→Confluence assignment is absorbed into state and reported `managed` — and Phase A's
+      // provenance flag tags it `viaPluralResource` so the absorption is annotated, not silent.
+      //
+      // Expected-fail on TWO counts until Phase D lands the re-exported fixtures + code together:
+      //   - committed fixtures today: the pair is `unmanaged` (state's plural block holds only
+      //     Engineering) — see the documenting test below.
+      //   - fixtures-without-code: it would be `managed` but UNFLAGGED.
+      // Greens only when the re-export makes it `managed` AND Phase A's flag rides through. Delete
+      // the `.fails` marker then (move to a greened-reds block).
+      const cov = computeCoverage(realLiveResources(), realStateResources());
+      const pair = cov.items.find(
+        (i) => i.kind === "AppGroupAssignment" && i.name === "Confluence / Contractors",
+      );
+      expect(pair?.bucket).toBe("managed");
+      expect(pair?.viaPluralResource).toBe(true);
+    },
+  );
+});
+
 describe("M11 Phase D — predictions that did NOT reproduce (closed; see PLAN Phase D)", () => {
   it("has no okta_app_access_policy_assignment — protects comes from inline authentication_policy", () => {
     // Prediction #2 (missed `protects` edge) can't reproduce here: this tenant attaches app

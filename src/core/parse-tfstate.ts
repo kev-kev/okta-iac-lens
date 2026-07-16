@@ -31,6 +31,12 @@ export type ParsedResource =
       authenticationPolicyId: string | null;
       /** Okta lifecycle status (`ACTIVE`|`INACTIVE`); undefined on fixtures that omit it => ACTIVE. */
       status?: string;
+      /**
+       * Live-only: the catalog slug (`RawApp.name`, e.g. "oidc_client"), NOT the display `name`
+       * (which is `label`). Carried through from `map-api` for the built-in-app exclusion
+       * contingency (PLAN.md); unset on the tfstate path, mirroring `groupType`.
+       */
+      catalogName?: string;
     }
   | {
       kind: "GroupRule";

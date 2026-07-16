@@ -60,8 +60,13 @@ describe("recommend", () => {
 
   it("noise only: an informational item, plus success (still no gaps)", () => {
     const recs = recommend(computeCoverage([...live, everyone], state));
-    expect(recs.some((r) => r.severity === "info")).toBe(true);
+    const info = recs.find((r) => r.severity === "info");
+    expect(info).toBeDefined();
     expect(recs.some((r) => r.severity === "success")).toBe(true);
     expect(recs.some((r) => r.severity === "action")).toBe(false);
+    // Provable-claim wording: no overclaiming "Okta built-ins or system config" blanket label —
+    // the info line defers to each item's specific reason.
+    expect(info?.title).toMatch(/not Terraform-manageable/i);
+    expect(`${info?.title} ${info?.detail}`).not.toMatch(/built-ins or system config/i);
   });
 });

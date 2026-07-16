@@ -65,10 +65,10 @@ export function recommend(report: SlimCoverageReport): Recommendation[] {
   if (excluded > 0) {
     recs.push({
       severity: "info",
-      title: `${plural(excluded, "resource")} Okta-managed (not a gap)`,
+      title: `${plural(excluded, "resource")} not Terraform-manageable (not a gap)`,
       detail:
-        `${plural(excluded, "resource")} are Okta built-ins or system config and can't be ` +
-        "managed by Terraform. They're excluded from the coverage %, not counted against you.",
+        `${plural(excluded, "resource")} aren't Terraform-manageable — each carries its specific ` +
+        "reason (see the excluded list). They're excluded from the coverage %, not counted against you.",
     });
   }
 
