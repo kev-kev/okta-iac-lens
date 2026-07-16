@@ -113,16 +113,17 @@ program
             throw new Error("trace --user requires --source okta (Terraform state has no users).");
           }
           const graph = await loadGraph(opts);
-          // One reader for the whole user trace: membership + the appLinks individual-assignment
-          // diff. Both are per-user, read-only GETs — the PII rail holds (no bulk sweep, no node).
+          // One reader for the whole user trace: membership + the per-app individual-assignment
+          // scope check. Both are per-user, read-only GETs — the PII rail holds (no bulk sweep, no
+          // node).
           const reader = new HttpOktaReader(readOktaConfigFromEnv());
           const membership = await loadUserMembership(opts.user, reader);
-          const { directApps, unmatchedApps } = await resolveUserDirectApps(reader, graph, membership);
+          const directApps = await resolveUserDirectApps(reader, graph, membership);
           const result = traceUser(graph, membership, { directApps });
           console.log(
             opts.app != null
               ? renderUserAppExplain(explainUserApp(graph, result, opts.app), format)
-              : renderUserTrace(result, format, unmatchedApps),
+              : renderUserTrace(result, format),
           );
           return;
         }

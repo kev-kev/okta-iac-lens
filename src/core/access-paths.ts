@@ -225,7 +225,7 @@ export interface UserTraceResult {
    */
   apps: AppNode[];
   /**
-   * Apps the user reaches ONLY by individual assignment (`okta_app_user` / live appLinks),
+   * Apps the user reaches ONLY by individual assignment (`okta_app_user`; live `scope: USER`),
    * not granted by any of their groups. A separate, labeled provenance channel — these have no
    * granting group, so they never appear in `viaGroups`. Name-sorted. Empty by default (the
    * caller supplies `opts.directApps`; the user is still never a graph node — see `traceUser`).
@@ -251,7 +251,8 @@ export interface UserTraceResult {
  *
  * `opts.directApps` are apps the user reaches by INDIVIDUAL assignment (not via any group) —
  * also a per-lookup input, resolved in `src/inputs` (state `okta_app_user` records, or the live
- * appLinks diff), never a graph edge and never a bulk `/apps/{id}/users` sweep (the PII rail).
+ * per-app `scope: USER` check), never a graph edge and never a bulk `/apps/{id}/users` sweep (the
+ * PII rail).
  * Defaults to `[]` => group-only behavior. Folded into the `apps` union and surfaced separately
  * on `individualApps` so provenance stays honest.
  */

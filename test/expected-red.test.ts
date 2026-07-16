@@ -84,7 +84,7 @@ describe("M13 — greened red (was M11 Phase D `it.fails`; now passes via the di
     // test.user is only in Engineering, which does NOT grant Salesforce. Salesforce is reachable
     // solely through the individual okta_app_user assignment. M12 COUNTS+surfaces it (never
     // dropped); M13 folds it into the per-user trace via the state `directApps` resolver — the
-    // static twin of the live appLinks diff. Ground truth: 5 apps incl. Salesforce.
+    // static twin of the live per-app `scope: USER` check. Ground truth: 5 apps incl. Salesforce.
     const graph = realStateGraph();
     const directApps = resolveUserDirectAppsFromState(realStateResources(), graph, TEST_USER.id);
     const ut = traceUser(graph, { user: TEST_USER, groupIds: [ENGINEERING] }, { directApps });

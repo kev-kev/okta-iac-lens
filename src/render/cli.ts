@@ -127,21 +127,10 @@ const GATE_PRIOR_CAVEAT =
   "Note: gate strength is a heuristic prior (org-default vs custom policy), not a factor-based " +
   "verdict — M15. This flags a divergence, not a proven weakness.";
 
-/**
- * Live-only drift: apps Okta actually shows the user that are absent from Terraform (a click-ops
- * app). Surfaced verbatim so individual/click-ops grants are never silently dropped — mirrors the
- * `UnmatchedAppLink` shape from the appLinks resolver, structurally, so render stays inputs-free.
- */
-export type UnmatchedApps = readonly { appInstanceId: string; label: string }[];
+const INDIVIDUAL_VIA = "individual assignment (okta_app_user — not a group grant)";
 
-const INDIVIDUAL_VIA = "individual assignment (okta_app_user / appLinks — not a group grant)";
-
-export function renderUserTrace(
-  result: UserTraceResult,
-  format: OutputFormat,
-  unmatchedApps: UnmatchedApps = [],
-): string {
-  if (format === "json") return JSON.stringify({ ...result, unmatchedApps }, null, 2);
+export function renderUserTrace(result: UserTraceResult, format: OutputFormat): string {
+  if (format === "json") return JSON.stringify(result, null, 2);
 
   const individualIds = new Set(result.individualApps.map((a) => a.id));
 
@@ -166,7 +155,7 @@ export function renderUserTrace(
     }
     if (result.individualApps.length > 0) {
       lines.push(
-        `  (+${result.individualApps.length} via individual assignment (okta_app_user / appLinks) — not a group grant)`,
+        `  (+${result.individualApps.length} via individual assignment (okta_app_user) — not a group grant)`,
       );
     }
   }
@@ -187,14 +176,6 @@ export function renderUserTrace(
   if (result.unknownGroupIds.length > 0) {
     lines.push(
       `  (+ ${result.unknownGroupIds.length} membership group(s) outside the loaded Terraform/live scope, not shown)`,
-    );
-  }
-
-  if (unmatchedApps.length > 0) {
-    lines.push("");
-    lines.push(
-      `Reachable but not in Terraform (${unmatchedApps.length}): ` +
-        unmatchedApps.map((u) => u.label).join(", "),
     );
   }
 

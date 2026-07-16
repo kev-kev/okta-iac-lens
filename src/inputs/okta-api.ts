@@ -90,17 +90,12 @@ export interface RawUser {
 }
 
 /**
- * One row of `GET /api/v1/users/{userId}/appLinks` — an app tile Okta actually shows this user
- * (the effective view: group-granted AND individually-assigned, incl. click-ops grants). This is
- * PER-LINK, not per-app: one app can expose several links, so callers dedupe by `appInstanceId`.
- * Only these two fields are used; the rest (URLs, sort order) is display chrome we don't read.
+ * How a user is assigned to an app, from `GET /api/v1/apps/{appId}/users/{userId}` `scope`:
+ * `USER` = an INDIVIDUAL (direct) assignment; `GROUP` = inherited through a group. This is the
+ * honest individual-assignment signal for the per-user trace (M13 Phase E) — it replaced the
+ * appLinks design, which returns an empty list for admin-assigned users.
  */
-export interface RawAppLink {
-  /** The app instance id — the join key to a graph `App` node (`AppNode.id`). */
-  appInstanceId: string;
-  /** Display label for the tile. Surfaced only for appLinks that match no graph app (drift). */
-  label: string;
-}
+export type AppAssignmentScope = "USER" | "GROUP";
 
 /**
  * Narrow read-only interface. `map-api.ts` and tests depend on this, not on
@@ -129,11 +124,13 @@ export interface OktaUserReader {
   /** `GET /api/v1/users/{userId}/groups` — the group ids this user belongs to. */
   listUserGroupIds(userId: string): Promise<string[]>;
   /**
-   * `GET /api/v1/users/{userId}/appLinks` — the apps Okta actually shows this user (the effective
-   * view: group AND individual grants). The individual-assignment channel for `traceUser`; a plain
-   * read GET, so `smoke --verify-readonly` is unaffected. Scope: `okta.users.read`.
+   * `GET /api/v1/apps/{appId}/users/{userId}` — this user's assignment to ONE app, or `null` if not
+   * assigned (404). The `scope` distinguishes an INDIVIDUAL (`USER`) assignment from a group-
+   * inherited (`GROUP`) one — the individual-assignment signal for `traceUser`. A plain read GET, so
+   * `smoke --verify-readonly` is unaffected. Per-user, never the bulk `/apps/{id}/users` sweep (the
+   * PII rail). Scope: `okta.apps.read`.
    */
-  listUserAppLinks(userId: string): Promise<RawAppLink[]>;
+  getUserAppAssignmentScope(userId: string, appId: string): Promise<AppAssignmentScope | null>;
 }
 
 export interface OktaReaderConfig {
@@ -262,10 +259,21 @@ export class HttpOktaReader implements OktaReader, OktaUserReader {
     return groups.map((g) => g.id);
   }
 
-  listUserAppLinks(userId: string): Promise<RawAppLink[]> {
-    return this.getPaginated<RawAppLink>(
-      `/api/v1/users/${encodeURIComponent(userId)}/appLinks`,
+  async getUserAppAssignmentScope(
+    userId: string,
+    appId: string,
+  ): Promise<AppAssignmentScope | null> {
+    const res = await this.get(
+      `/api/v1/apps/${encodeURIComponent(appId)}/users/${encodeURIComponent(userId)}`,
     );
+    if (res.status === 404) return null; // user not assigned to this app
+    if (!res.ok) {
+      throw new Error(
+        `Okta API request failed: GET /api/v1/apps/${appId}/users/${userId} -> ${res.status} ${res.statusText}`,
+      );
+    }
+    const au = (await res.json()) as { scope?: string };
+    return au.scope === "USER" ? "USER" : "GROUP";
   }
 
   listGroups(): Promise<RawGroup[]> {

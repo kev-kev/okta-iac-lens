@@ -10,7 +10,7 @@ import {
   loadUserMembership,
   resolveUserDirectApps,
 } from "../src/inputs/load-resources.js";
-import type { OktaUserReader, RawAppLink } from "../src/inputs/okta-api.js";
+import type { AppAssignmentScope, OktaUserReader } from "../src/inputs/okta-api.js";
 import { renderUserAppExplain, renderUserTrace } from "../src/render/cli.js";
 import { graphFromFixture } from "./fixture.js";
 
@@ -29,7 +29,7 @@ describe("loadUserMembership", () => {
     const reader: OktaUserReader = {
       getUserByLogin: async (login) => ({ id: "u-alice", profile: { login } }),
       listUserGroupIds: async (id) => (id === "u-alice" ? ["g-eng", "g-con"] : []),
-      listUserAppLinks: async () => [],
+      getUserAppAssignmentScope: async () => null,
     };
     const membership = await loadUserMembership("alice@example.com", reader, {});
     expect(membership).toEqual({
@@ -39,35 +39,28 @@ describe("loadUserMembership", () => {
   });
 });
 
-describe("resolveUserDirectApps (live appLinks diff, no network)", () => {
-  // Contractors (g-con) grants GitHub (a-gh) but NOT Datadog (a-dd). So for a Contractors user,
-  // an appLinks tile for Datadog is INDIVIDUAL (not group-reached), GitHub is group-reached, and a
-  // tile with no matching graph app is click-ops drift.
-  const appLinksReader = (links: RawAppLink[]): OktaUserReader => ({
+describe("resolveUserDirectApps (live per-app scope check, no network)", () => {
+  // A reader that reports each app's assignment scope for our one user. USER = individual,
+  // GROUP = inherited, null = not assigned. Datadog (a-dd) is individually assigned here.
+  const scopeReader = (scopes: Record<string, AppAssignmentScope>): OktaUserReader => ({
     getUserByLogin: async (login) => ({ id: "u-alice", profile: { login } }),
     listUserGroupIds: async () => ["g-con"],
-    listUserAppLinks: async () => links,
+    getUserAppAssignmentScope: async (_userId, appId) => scopes[appId] ?? null,
   });
 
-  it("keeps individual apps, subtracts group-reached, dedupes per-link, and surfaces drift", async () => {
-    const reader = appLinksReader([
-      { appInstanceId: "a-gh", label: "GitHub" }, // group-reached via Contractors -> subtracted
-      { appInstanceId: "a-dd", label: "Datadog" }, // individual -> directApps
-      { appInstanceId: "a-dd", label: "Datadog" }, // duplicate LINK for the same app -> deduped
-      { appInstanceId: "a-clickops", label: "Concur (click-ops)" }, // no graph app -> unmatched
-    ]);
-    const { directApps, unmatchedApps } = await resolveUserDirectApps(reader, graph, {
+  it("keeps only USER-scoped apps and ignores GROUP-scoped and unassigned ones", async () => {
+    const reader = scopeReader({ "a-gh": "GROUP", "a-dd": "USER" });
+    const directApps = await resolveUserDirectApps(reader, graph, {
       user: alice,
       groupIds: ["g-con"],
     });
     expect(directApps.map((a) => a.name)).toEqual(["Datadog"]);
-    expect(unmatchedApps).toEqual([{ appInstanceId: "a-clickops", label: "Concur (click-ops)" }]);
   });
 
   it("folds into traceUser as the individual-assignment channel", async () => {
-    const reader = appLinksReader([{ appInstanceId: "a-dd", label: "Datadog" }]);
+    const reader = scopeReader({ "a-dd": "USER" });
     const membership = { user: alice, groupIds: ["g-con"] };
-    const { directApps } = await resolveUserDirectApps(reader, graph, membership);
+    const directApps = await resolveUserDirectApps(reader, graph, membership);
     const ut = traceUser(graph, membership, { directApps });
     expect(ut.apps.map((a) => a.name)).toEqual(["Datadog", "GitHub"]);
     expect(ut.individualApps.map((a) => a.name)).toEqual(["Datadog"]);
@@ -104,25 +97,15 @@ describe("renderUserTrace", () => {
     const trace = traceUser(graph, { user: alice, groupIds: ["g-con"] }, { directApps: [datadog] });
     const text = renderUserTrace(trace, "text");
     expect(text).toContain(
-      "- Datadog (a-dd)  ·  via: individual assignment (okta_app_user / appLinks — not a group grant)",
+      "- Datadog (a-dd)  ·  via: individual assignment (okta_app_user — not a group grant)",
     );
-    expect(text).toContain("+1 via individual assignment (okta_app_user / appLinks) — not a group grant");
+    expect(text).toContain("+1 via individual assignment (okta_app_user) — not a group grant");
   });
 
-  it("text: live unmatched appLinks surface as reachable-but-not-in-Terraform drift", () => {
-    const text = renderUserTrace(engTrace, "text", [
-      { appInstanceId: "a-clickops", label: "Concur (click-ops)" },
-    ]);
-    expect(text).toContain("Reachable but not in Terraform (1): Concur (click-ops)");
-  });
-
-  it("json: round-trips the result and carries unmatchedApps", () => {
-    const parsed = JSON.parse(
-      renderUserTrace(engTrace, "json", [{ appInstanceId: "a-clickops", label: "Concur" }]),
-    );
+  it("json: round-trips the result", () => {
+    const parsed = JSON.parse(renderUserTrace(engTrace, "json"));
     expect(parsed.user.login).toBe("alice@example.com");
     expect(parsed.apps.map((a: { name: string }) => a.name)).toEqual(["Datadog", "GitHub"]);
-    expect(parsed.unmatchedApps).toEqual([{ appInstanceId: "a-clickops", label: "Concur" }]);
   });
 });
 
