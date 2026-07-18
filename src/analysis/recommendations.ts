@@ -65,10 +65,22 @@ export function recommend(report: SlimCoverageReport): Recommendation[] {
   if (excluded > 0) {
     recs.push({
       severity: "info",
-      title: `${plural(excluded, "resource")} Okta-managed (not a gap)`,
+      title: `${plural(excluded, "resource")} not Terraform-manageable (not a gap)`,
       detail:
-        `${plural(excluded, "resource")} are Okta built-ins or system config and can't be ` +
-        "managed by Terraform. They're excluded from the coverage %, not counted against you.",
+        `${plural(excluded, "resource")} aren't Terraform-manageable — each carries its specific ` +
+        "reason (see the excluded list). They're excluded from the coverage %, not counted against you.",
+    });
+  }
+
+  const pluralCount = report.items.filter((i) => i.viaPluralResource).length;
+  if (pluralCount > 0) {
+    recs.push({
+      severity: "info",
+      title: `${plural(pluralCount, "assignment")} state-tracked via okta_app_group_assignments`,
+      detail:
+        "The plural resource re-reads ALL groups assigned to the app on refresh, so a click-ops " +
+        "assignment is absorbed into state and reported as managed — presence-only coverage can't " +
+        "detect that drift. Treat these pairs' `managed` status as absorbs-drift, not verified.",
     });
   }
 

@@ -58,10 +58,37 @@ describe("recommend", () => {
     expect(recs.some((r) => r.severity === "action" && /stale/i.test(r.title))).toBe(true);
   });
 
+  it("plural-sourced pair: an info item flagging absorbs-drift, from the same shared source as the CLI", () => {
+    const liveAssign: ParsedResource = {
+      kind: "AppGroupAssignment",
+      address: "okta-api:app_group_assignment/a-gh/g-ops",
+      appId: "a-gh",
+      groupId: "g-ops",
+    };
+    const statePluralAssign: ParsedResource = {
+      kind: "AppGroupAssignment",
+      address: "okta_app_group_assignments.x",
+      appId: "a-gh",
+      groupId: "g-ops",
+      viaPluralResource: true,
+    };
+    const recs = recommend(
+      computeCoverage([...live, clickOpsGroup, liveAssign], [...state, statePluralAssign]),
+    );
+    const info = recs.find((r) => r.severity === "info" && /okta_app_group_assignments/.test(r.title));
+    expect(info).toBeDefined();
+    expect(info?.detail).toMatch(/re-reads ALL groups/i);
+  });
+
   it("noise only: an informational item, plus success (still no gaps)", () => {
     const recs = recommend(computeCoverage([...live, everyone], state));
-    expect(recs.some((r) => r.severity === "info")).toBe(true);
+    const info = recs.find((r) => r.severity === "info");
+    expect(info).toBeDefined();
     expect(recs.some((r) => r.severity === "success")).toBe(true);
     expect(recs.some((r) => r.severity === "action")).toBe(false);
+    // Provable-claim wording: no overclaiming "Okta built-ins or system config" blanket label —
+    // the info line defers to each item's specific reason.
+    expect(info?.title).toMatch(/not Terraform-manageable/i);
+    expect(`${info?.title} ${info?.detail}`).not.toMatch(/built-ins or system config/i);
   });
 });

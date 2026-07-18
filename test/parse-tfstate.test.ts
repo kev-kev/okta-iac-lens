@@ -84,6 +84,33 @@ describe("parseTfState — plural okta_app_group_assignments", () => {
   it("ignores a plural resource with no group blocks", () => {
     expect(byKind(parseTfState(stateWith({ app_id: "a-x" })), "AppGroupAssignment")).toHaveLength(0);
   });
+
+  it("flags every plural-sourced pair with viaPluralResource (the absorbs-drift provenance)", () => {
+    const state = stateWith({ app_id: "a-gh", group: [{ id: "g-eng" }, { id: "g-con" }] });
+    const assignments = byKind(parseTfState(state), "AppGroupAssignment");
+    expect(assignments).toHaveLength(2);
+    expect(assignments.every((a) => a.viaPluralResource === true)).toBe(true);
+  });
+
+  it("does NOT flag pairs from the singular okta_app_group_assignment resource", () => {
+    const state = {
+      values: {
+        root_module: {
+          resources: [
+            {
+              address: "okta_app_group_assignment.x",
+              mode: "managed",
+              type: "okta_app_group_assignment",
+              name: "x",
+              values: { id: "a-gh/g-eng", app_id: "a-gh", group_id: "g-eng" },
+            },
+          ],
+        },
+      },
+    };
+    const [assignment] = byKind(parseTfState(state), "AppGroupAssignment");
+    expect(assignment.viaPluralResource).toBeUndefined();
+  });
 });
 
 // --- M12: make the graph true (allowlist, new kinds, status/priority) ---

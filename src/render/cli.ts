@@ -350,6 +350,23 @@ export function renderCoverage(report: CoverageReport, format: OutputFormat): st
   section("Stale — in Terraform but not the tenant", "stale", false);
   section("Excluded — not Terraform-manageable", "excluded", true);
 
+  // Plural-sourced provenance callout — only when such pairs exist (unlike the core buckets, an
+  // empty "(none)" here would be noise for the common single-assignment tenant).
+  const plural = report.items.filter((i) => i.viaPluralResource);
+  if (plural.length > 0) {
+    lines.push("");
+    lines.push(`State-tracked via okta_app_group_assignments — absorbs click-ops drift (${plural.length}):`);
+    lines.push(
+      "  Caveat: the plural resource re-reads ALL assigned groups on refresh, so a click-ops",
+    );
+    lines.push(
+      "  assignment gets absorbed into state and reported as managed — coverage cannot detect it.",
+    );
+    for (const i of plural) {
+      lines.push(`  - [${i.kind}] ${i.name} (${i.key}) — ${i.bucket}`);
+    }
+  }
+
   lines.push("");
   lines.push("Recommended steps:");
   for (const r of recommendations) {

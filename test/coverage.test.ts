@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { computeCoverage, countIndividualAssignments } from "../src/analysis/coverage.js";
 import type { CoverageBucket, CoverageReport, ResourceKind } from "../src/analysis/coverage.js";
 import type { ParsedResource } from "../src/core/parse-tfstate.js";
-import { liveResources, stateResources } from "./fixture.js";
+import { liveResources, realLiveResources, realStateResources, stateResources } from "./fixture.js";
 
 const live = liveResources();
 const state = stateResources();
@@ -114,7 +114,8 @@ describe("computeCoverage — noise injection (built-ins are excluded, not gaps)
     );
     expect(reasons["g-everyone"]).toMatch(/BUILT_IN/);
     expect(reasons["p-default-signon"]).toMatch(/system/i);
-    expect(reasons["p-dashboard"]).toMatch(/no managed app/i);
+    // "Okta Dashboard" is a capture-verified built-in console policy name → identity-refined reason.
+    expect(reasons["p-dashboard"]).toMatch(/built-in console app/i);
   });
 });
 
@@ -183,6 +184,117 @@ describe("computeCoverage — ordering regressions", () => {
     const item = report.items.find((i) => i.key === "p-unused");
     expect(item?.bucket).toBe("managed");
     expect(kindRow(report, "AppAuthPolicy")).toMatchObject({ managed: 2, excluded: 0, stale: 0 });
+  });
+});
+
+// --- M14 Phase B: AppAuthPolicy exclusion re-key + honest reason strings ---
+
+describe("computeCoverage — AppAuthPolicy exclusion re-key (M14)", () => {
+  it("unreferenced built-in-named policy → excluded with the identity reason", () => {
+    // Same as the noise-injection dashboardPolicy, asserted directly on the reason wording.
+    const report = computeCoverage([...live, dashboardPolicy], state);
+    const item = report.items.find((i) => i.key === "p-dashboard");
+    expect(item?.bucket).toBe("excluded");
+    expect(item?.reason).toBe(
+      "access policy of Okta built-in console app — not Terraform-manageable",
+    );
+  });
+
+  it("unreferenced CUSTOM-named policy → excluded with the GENERIC reason (never a built-in claim)", () => {
+    const customPolicy: ParsedResource = {
+      kind: "AppAuthPolicy",
+      id: "p-custom",
+      name: "Finance-Team-Auth", // not in BUILT_IN_APP_POLICY_NAMES
+      address: "okta-api:app_signon_policy/p-custom",
+    };
+    const report = computeCoverage([...live, customPolicy], state);
+    const item = report.items.find((i) => i.key === "p-custom");
+    expect(item?.bucket).toBe("excluded");
+    expect(item?.reason).toBe(
+      "app access policy referenced by no Terraform-manageable app in the live snapshot",
+    );
+    expect(item?.reason).not.toMatch(/built-in/i);
+  });
+
+  it("policy referenced by a Terraform-manageable app → unmanaged (a real gap), not excluded", () => {
+    // A live app referencing p-gap keeps it OUT of the excluded bucket even though p-gap itself is
+    // live-only. The referencing app is manageable (App has no exclusion predicate), so the policy
+    // is a genuine IaC gap. Identity of the policy name is irrelevant to the bucket.
+    const gapPolicy: ParsedResource = {
+      kind: "AppAuthPolicy",
+      id: "p-gap",
+      name: "Okta Dashboard", // spoof a built-in name — the bucket must NOT be swayed by it
+      address: "okta-api:app_signon_policy/p-gap",
+    };
+    const appUsingGap: ParsedResource = {
+      kind: "App",
+      id: "a-gap",
+      name: "GapApp",
+      appType: "okta_app_oauth",
+      address: "okta-api:app/a-gap",
+      authenticationPolicyId: "p-gap",
+    };
+    const report = computeCoverage([...live, gapPolicy, appUsingGap], state);
+    const item = report.items.find((i) => i.key === "p-gap");
+    expect(item?.bucket).toBe("unmanaged");
+    expect(item?.reason).toBeUndefined();
+  });
+});
+
+// --- M14 Phase A: plural-resource provenance (viaPluralResource) ---
+
+describe("computeCoverage — plural-resource provenance (M14)", () => {
+  // A live assignment (map-api never sets the flag) + a state assignment carrying it, same key.
+  const liveAssign: ParsedResource = {
+    kind: "AppGroupAssignment",
+    address: "okta-api:app_group_assignment/a-gh/g-plural",
+    appId: "a-gh",
+    groupId: "g-plural",
+  };
+  const statePluralAssign: ParsedResource = {
+    kind: "AppGroupAssignment",
+    address: "okta_app_group_assignments.x",
+    appId: "a-gh",
+    groupId: "g-plural",
+    viaPluralResource: true,
+  };
+
+  it("flags a managed pair from the STATE-side plural record (managed embeds the live record, which lacks the flag)", () => {
+    const report = computeCoverage([...live, liveAssign], [...state, statePluralAssign]);
+    const item = report.items.find((i) => i.key === "a-gh/g-plural");
+    expect(item?.bucket).toBe("managed");
+    expect(item?.viaPluralResource).toBe(true);
+  });
+
+  it("flags a stale plural pair (state-only)", () => {
+    const report = computeCoverage(live, [...state, statePluralAssign]);
+    const item = report.items.find((i) => i.key === "a-gh/g-plural");
+    expect(item?.bucket).toBe("stale");
+    expect(item?.viaPluralResource).toBe(true);
+  });
+
+  it("never flags a live-only (unmanaged) pair — the flag is a state-side concept", () => {
+    const report = computeCoverage([...live, liveAssign], state);
+    const item = report.items.find((i) => i.key === "a-gh/g-plural");
+    expect(item?.bucket).toBe("unmanaged");
+    expect(item?.viaPluralResource).toBeUndefined();
+  });
+
+  it("leaves singular-sourced managed pairs unflagged", () => {
+    const report = computeCoverage(live, state);
+    for (const item of report.items.filter((i) => i.kind === "AppGroupAssignment")) {
+      expect(item.viaPluralResource).toBeUndefined();
+    }
+  });
+
+  it("flags Confluence/Engineering managed in the real fixtures (plural-sourced today)", () => {
+    // Confluence's assignments come from the plural `okta_app_group_assignments.confluence_groups`.
+    const report = computeCoverage(realLiveResources(), realStateResources());
+    const confluenceEng = report.items.find(
+      (i) => i.kind === "AppGroupAssignment" && i.name === "Confluence / Engineering",
+    );
+    expect(confluenceEng?.bucket).toBe("managed");
+    expect(confluenceEng?.viaPluralResource).toBe(true);
   });
 });
 

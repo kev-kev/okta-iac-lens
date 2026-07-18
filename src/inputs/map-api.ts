@@ -79,6 +79,9 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       authenticationPolicyId:
         policyId !== null && !systemPolicyIds.has(policyId) ? policyId : null,
       status: app.status || undefined,
+      // Catalog slug (NOT the display label) — live-only, for the built-in-app exclusion
+      // contingency. Omit when empty so the field stays truly optional (groupType precedent).
+      ...(app.name ? { catalogName: app.name } : {}),
     });
   }
 
