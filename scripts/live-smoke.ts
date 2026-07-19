@@ -99,6 +99,69 @@ async function main(): Promise<void> {
     console.log(`  - ${p.id}  name=${JSON.stringify(p.name)}  system=${p.system}`);
   }
 
+  // --- M15 Phase 0: app sign-on policy RULES ----------------------------------
+  // Capture GET /policies/{id}/rules for every ACCESS_POLICY (custom Strict-Auth AND the
+  // system org-default), so the strength-band fact table can be checked against real rule
+  // shapes before any rule parser is written. Sequential per-policy — same rate-limit posture
+  // as the per-app group reads. RAW JSON only; no normalization here.
+  const rulesByPolicy: Record<string, unknown[]> = {};
+  for (const p of snapshot.appAuthPolicies) {
+    rulesByPolicy[p.id] = await reader.listPolicyRules(p.id);
+  }
+  await writeFile(
+    new URL("app-signon-policy-rules.json", CAPTURE_DIR),
+    JSON.stringify(rulesByPolicy, null, 2),
+  );
+  console.log(`\nApp sign-on policy RULES (M15 Phase 0 — strength-bearing fields):`);
+  for (const p of snapshot.appAuthPolicies) {
+    const rules = rulesByPolicy[p.id] ?? [];
+    console.log(`  ${JSON.stringify(p.name)} (${p.id})  system=${p.system}  — ${rules.length} rule(s):`);
+    for (const r of rules) {
+      const rr = r as {
+        name?: string;
+        status?: string;
+        priority?: number;
+        system?: boolean;
+        actions?: {
+          appSignOn?: {
+            access?: string;
+            verificationMethod?: {
+              factorMode?: string;
+              type?: string;
+              reauthenticateIn?: string;
+              constraints?: unknown[];
+            };
+          };
+        };
+      };
+      const asn = rr.actions?.appSignOn;
+      const vm = asn?.verificationMethod;
+      // Show which authenticator classes each constraint object carries (knowledge / possession /
+      // both) plus the phishing-resistant + hardware flags — the exact facts the band model reads.
+      const constraints = Array.isArray(vm?.constraints)
+        ? vm!.constraints
+            .map((c) => {
+              const obj = (c ?? {}) as {
+                knowledge?: unknown;
+                possession?: { phishingResistant?: string; hardwareProtection?: string };
+              };
+              const classes = Object.keys(obj).join("+") || "(empty)";
+              const poss = obj.possession;
+              const flags = poss
+                ? `{phishingResistant=${poss.phishingResistant} hardwareProtection=${poss.hardwareProtection}}`
+                : "";
+              return `${classes}${flags}`;
+            })
+            .join(" , ")
+        : "(none)";
+      console.log(
+        `    - ${JSON.stringify(rr.name)}  status=${rr.status}  priority=${rr.priority}  system=${rr.system}` +
+          `\n        access=${asn?.access}  factorMode=${vm?.factorMode}  type=${vm?.type}  reauth=${vm?.reauthenticateIn}` +
+          `\n        constraints=[ ${constraints} ]`,
+      );
+    }
+  }
+
   // --- Optional read-only verification -----------------------------------------
   if (process.argv.includes("--verify-readonly")) {
     console.log(`\nVerifying the credential cannot write (POST /api/v1/groups)...`);

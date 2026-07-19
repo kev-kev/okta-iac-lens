@@ -37,6 +37,10 @@ const CAPTURE_FILES = [
   "policies-signon.json",
   "app-signon-policies.json",
   "apps-groups.json",
+  // M15 Phase 0: GET /policies/{id}/rules per ACCESS_POLICY, keyed by policy id. The keys are
+  // policy ids and each rule carries its own `rst…`/`0pr…` ids — all 20-char, so the shared
+  // OKTA_ID scrub maps them consistently with the ids already in app-signon-policies.json.
+  "app-signon-policy-rules.json",
 ] as const;
 
 // --- fixed, non-id scrubs (exact-string replacements) ------------------------

@@ -299,4 +299,19 @@ export class HttpOktaReader implements OktaReader, OktaUserReader {
   listAppGroupAssignments(appId: string): Promise<RawAppGroupAssignment[]> {
     return this.getPaginated<RawAppGroupAssignment>(`/api/v1/apps/${appId}/groups`);
   }
+
+  /**
+   * `GET /api/v1/policies/{policyId}/rules` — the rules of one policy, in priority order.
+   *
+   * M15 Phase 0 CAPTURE surface only. Returns RAW, untyped rule JSON so the strength-band
+   * fact table can be verified against real shapes BEFORE a typed `RawPolicyRule` + parser are
+   * committed (the M11 shapes-before-parser rail). Deliberately concrete-only and OFF the
+   * `OktaReader` interface for now — promoting it there would force every test double to
+   * implement it before Phase A is ready. Phase A wires it onto the interface, folds the rules
+   * into `OktaApiSnapshot`, and adds the `map-api` variant. Plain read under `okta.policies.read`;
+   * unaffected by `smoke --verify-readonly`.
+   */
+  async listPolicyRules(policyId: string): Promise<unknown[]> {
+    return this.getPaginated<unknown>(`/api/v1/policies/${encodeURIComponent(policyId)}/rules`);
+  }
 }

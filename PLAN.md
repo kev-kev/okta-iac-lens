@@ -25,6 +25,33 @@ M13 replaced fabricated strength directions with direction-neutral priors and st
 - Seed: add at least one deliberately WEAK rule (e.g. password-only / 1FA) and one DENY rule via Terraform, so the strength ordering has real spread to classify. Re-capture, sanitize (sha1 id-mapping keeps fixture ids stable), inspect the leak guard.
 - **Output:** a short fact table in this file (M11 pattern) mapping observed rule JSON → proposed strength bands, before any parser code.
 
+#### Phase 0 findings (2026-07-19) — shapes verified vs docs; live capture PENDING
+
+Two design forks were resolved to their recommended defaults (both **revisitable** — flagged here so a reversal is a localized change, not a rewrite):
+
+- **D1 — band model = weakest-ALLOW FLOOR.** A policy's strength band = the weakest assurance any *ACTIVE ALLOW* rule permits (the easiest documented way in). Honest lower bound, needs no rule-condition evaluation, and matches the tool's existing stance ("the weakest gate is the effective exposure", `policy-outliers.ts`). The band cites the specific rule as evidence; DENY rules are recorded but do **not** set the floor. This deliberately **deviates from the "priority picks the effective rule" wording above** — priority is not used to pick a single winning rule (that needs conditions we never read); it only identifies the system catch-all and breaks evidence-citation ties. *If reversed to "effective = top-priority rule":* only `policy-strength.ts`'s floor reducer + its property tests change.
+- **D2 — global session-policy rules (`okta_policy_rule_signon`) = DEFERRED.** M15 scopes to APP auth policy rule strength only. The session-gate surfaces (risk `session-policy` label, trace "session gate") keep their M13 prior wording. Session-rule strength is a fast-follow (its bands — `mfa_required`, `session_lifetime`, `primary_factor` — don't map onto the app-auth factor bands anyway). *If un-deferred:* additive — a second capture + parser variant + a separate band set; nothing in the app-auth path changes.
+
+**Verified rule shapes** (okta/okta v4.20.0 registry + Okta API docs + a practitioner capture — a live capture from *this* tenant still verifies field presence):
+
+- **tfstate** `okta_app_signon_policy_rule`: `access` (`ALLOW`|`DENY`), `factor_mode` (`1FA`|`2FA`), `type` (`ASSURANCE`|…), `re_authentication_frequency` (ISO-8601, e.g. `PT0S`/`PT12H`), `inactivity_period`, `priority`, `status`, and `constraints` — a **List of String**, each element a `jsonencode()`'d authenticator-class object.
+- **live** `GET /policies/{id}/rules` → per rule: `actions.appSignOn.access` and `actions.appSignOn.verificationMethod` = `{ factorMode, type, reauthenticateIn, constraints: [ { knowledge:{types,reauthenticateIn}, possession:{deviceBound,hardwareProtection,phishingResistant,userPresence,methods} } ] }`. Constraints are **nested objects live, JSON-strings in tfstate** — the parser and mapper must normalize both to one internal shape.
+- **Two asymmetries (honest, documented, not bugs):** (a) the **system catch-all** rule (`system:true`, lowest priority) is *always* returned live but is *absent* from tfstate (unmanaged) — so a policy with zero custom rules is `unknown` on the tfstate path yet has ≥1 readable rule live; this is a known equivalence-oracle divergence and the natural home of the `unknown` band. (b) constraints encoding, per above.
+
+**Fact table — observed rule JSON → strength band** (floor model; bands ordered strongest→weakest, `unknown` incomparable):
+
+| # | Live `actions.appSignOn` | tfstate `okta_app_signon_policy_rule` | Per-rule classification |
+|---|---|---|---|
+| 1 | `access:"DENY"` | `access="DENY"` | **DENY** — recorded as evidence; does not set the floor |
+| 2 | `access:"ALLOW"`, `verificationMethod.factorMode:"1FA"` | `access="ALLOW"`, `factor_mode="1FA"` | **single-factor** |
+| 3 | `access:"ALLOW"`, `factorMode:"2FA"`, no `phishingResistant`/`hardwareProtection` REQUIRED | `access="ALLOW"`, `factor_mode="2FA"`, constraints w/o those flags | **two-factor** |
+| 4 | `access:"ALLOW"`, `factorMode:"2FA"`, some `constraints[].possession.phishingResistant="REQUIRED"` **or** `hardwareProtection="REQUIRED"` | same via `jsonencode({possession={phishingResistant="REQUIRED"…}})` | **phishing-resistant-2fa** |
+| 5 | `factorMode` present but unrecognized / rule shape unclassifiable | ditto | **unknown** (never guess) |
+
+Per-**policy** band = the **weakest band among its ACTIVE ALLOW rules** (2 < 3 < 4). Special cases: ACTIVE rules exist but **none ALLOW** (all DENY) → `deny-all` (strongest); **no readable ACTIVE rules** (e.g. tfstate policy with only the unmanaged catch-all) → `unknown`. INACTIVE rules are excluded (the M12 rule). Ordinal for comparison: `deny-all`(4) > `phishing-resistant-2fa`(3) > `two-factor`(2) > `single-factor`(1); `unknown` compares to nothing.
+
+**Phase 0 status:** shapes verified vs docs ✅ · seed weak+DENY+strong rules written (`seed/main.tf` constructs 5a–5c) ✅ · capture plumbing added (`HttpOktaReader.listPolicyRules`, `live-smoke` writes+prints, `sanitize-captures` includes the new file) ✅ · **live capture + re-apply + sanitize: PENDING the human** (write-token step). Phase A does not start until a real capture confirms the shapes above.
+
 ### Phase A — rule capture (parser + reader + mapper)
 
 - `parse-tfstate.ts`: `AppAuthPolicyRule` variant (id, policyId, name, priority, status, + the strength-bearing fields the fact table proves out).
