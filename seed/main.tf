@@ -293,15 +293,15 @@ resource "okta_app_signon_policy_rule" "strict_1fa_bypass" {
   ]
 }
 
-# (5c) DENY rule — blocks off-network sign-in outright. Demonstrates access=DENY capture.
-# Under the floor model a DENY rule RESTRICTS but does not set the policy's ALLOW floor
-# (it grants no one), so the band model records it as evidence without letting it lower or
-# raise the floor. `network_connection = OFF_NETWORK` needs no external zone id.
-resource "okta_app_signon_policy_rule" "strict_deny_offnetwork" {
-  policy_id          = okta_app_signon_policy.strict_auth.id
-  name               = "Block-Off-Network"
-  access             = "DENY"
-  status             = "ACTIVE"
-  priority           = 1
-  network_connection = "OFF_NETWORK"
-}
+# (5c) DENY rule — REMOVED 2026-07-20 (was `Block-Off-Network`). The intended
+# `network_connection = "OFF_NETWORK"` DENY rule is rejected by this tenant: the
+# OFF_NETWORK/ON_NETWORK connection types are invalid once the MULTIPLE_NETWORK_ZONES
+# feature is enabled —
+#   API: "conditions.network: You cannot use the connection type: OFF_NETWORK when the
+#         feature: MULTIPLE_NETWORK_ZONES is enabled."
+# No clean ZERO-dependency DENY has a good home here: a group-scoped DENY either blocks a
+# real group or shadows the 1FA kicker (5b); a zone-scoped DENY needs a tenant-specific zone
+# id. So the DENY -> `deny-all` band is exercised by SYNTHETIC Phase B property tests, and the
+# live fixture keeps the two ALLOW rules — ample spread (single-factor via 5b, phishing-resistant
+# -2fa via 5a, plus the system catch-all's two-factor). To add a real DENY later:
+#   network_connection = "ZONE"  +  network_includes = [<BlockedIpZone id from GET /api/v1/zones>].

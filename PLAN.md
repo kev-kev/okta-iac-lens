@@ -50,7 +50,17 @@ Two design forks were resolved to their recommended defaults (both **revisitable
 
 Per-**policy** band = the **weakest band among its ACTIVE ALLOW rules** (2 < 3 < 4). Special cases: ACTIVE rules exist but **none ALLOW** (all DENY) → `deny-all` (strongest); **no readable ACTIVE rules** (e.g. tfstate policy with only the unmanaged catch-all) → `unknown`. INACTIVE rules are excluded (the M12 rule). Ordinal for comparison: `deny-all`(4) > `phishing-resistant-2fa`(3) > `two-factor`(2) > `single-factor`(1); `unknown` compares to nothing.
 
-**Phase 0 status:** shapes verified vs docs ✅ · seed weak+DENY+strong rules written (`seed/main.tf` constructs 5a–5c) ✅ · capture plumbing added (`HttpOktaReader.listPolicyRules`, `live-smoke` writes+prints, `sanitize-captures` includes the new file) ✅ · **live capture + re-apply + sanitize: PENDING the human** (write-token step). Phase A does not start until a real capture confirms the shapes above.
+**Phase 0 status:** shapes verified vs docs ✅ · seed rules written (`seed/main.tf` constructs 5a–5c) ✅ · capture plumbing added (`HttpOktaReader.listPolicyRules`, `live-smoke` writes+prints, `sanitize-captures` includes the new file) ✅ · **live capture DONE (2026-07-19)** ✅ · sanitize + final DENY-rule apply pending. Phase A starts once the fixture is regenerated green.
+
+**Phase 0 LIVE CONFIRMATION (2026-07-19 capture, `integrator-1546176`):** ALLOW-band shapes match the fact table end-to-end. Findings that refine the model:
+
+- **The kicker is real.** Strict-Auth → floor `single-factor` (weakest ALLOW = "Contractors-Password-Bypass", 1FA); org default "Any two factors" (system) → `two-factor`. Apps behind Strict-Auth therefore floor *weaker* than GitHub (org default): the org-default-is-looser prior is **inverted** by evidence → **arm this as the Phase C red**.
+- **System catch-all confirmed always-present live** (`system:true`, `priority:99`, `ALLOW`), absent from tfstate. So org-default and any all-catch-all policy band `unknown` on the tfstate path (documented divergence, not a bug).
+- **New factorMode value observed: `2FA_If_Possible`** (Okta Account Management Policy — an Identity-Engine value; the plan's Known-Risk-1 made real). Semantics = 2FA when enrolled else 1FA fallback → floor `single-factor` (conservative; flagged in evidence). Truly unrecognized factorModes → `unknown`, never guessed. Parser must not crash on unknown values.
+- **Evidence must carry the deciding rule's SCOPE.** The 1FA floor rule is scoped to group Contractors (no Contractor is assigned to Datadog/Wiki), so the floor is a POLICY property, not proof every app is reachable at 1FA. Phase B threads `groups_included`/`network_connection` into the evidence so the band stays honest without evaluating conditions.
+- **Org-default band source:** the system "Any two factors" policy's rules ARE captured (keyed by its id); the strength model maps `authenticationPolicyId=null` → that policy's band. tfstate lacks them → `unknown` there.
+- **DENY row still doc-derived:** the seed's `Block-Off-Network` DENY rule did NOT create on apply (2 of 3 rules landed — see below); diagnosing the HCL/API error before the final capture. DENY→`deny-all` is otherwise covered by synthetic Phase B property tests.
+- **Fact-table addendum:** factorMode `2FA_If_Possible` → `single-factor`; any other unrecognized factorMode → `unknown`.
 
 ### Phase A — rule capture (parser + reader + mapper)
 
