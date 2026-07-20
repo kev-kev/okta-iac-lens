@@ -19,10 +19,12 @@ const KIND_TO_TF_TYPE: Record<Exclude<ParsedResource["kind"], "App">, string> = 
   // Assignment gaps target the SINGULAR resource (one block per pair); the plural imports by
   // app id and would pull ALL groups, wrong granularity for a per-pair gap.
   AppGroupAssignment: "okta_app_group_assignment",
-  // These two never reach coverage (kept out of KIND_ORDER — the live snapshot can't contain
-  // them, so they'd be false `stale`), hence never emit an import block. Mapped for completeness.
+  // These never reach coverage (kept out of KIND_ORDER — the live snapshot can't contain them, or
+  // they carry the unmanaged system catch-all, so they'd be false `stale`), hence never emit an
+  // import block. Mapped for completeness.
   AppUserAssignment: "okta_app_user",
   AppAccessPolicyAssignment: "okta_app_access_policy_assignment",
+  AppAuthPolicyRule: "okta_app_signon_policy_rule",
 };
 
 const UNKNOWN_APP_PREFIX = "okta_app_unknown:";

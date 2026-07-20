@@ -9,6 +9,25 @@
  * through `child_modules` so a resource's module nesting doesn't change the result.
  */
 
+/**
+ * One normalized authenticator-class constraint — one element of an app-auth policy rule's
+ * `constraints`. The two capture paths encode these DIFFERENTLY (Phase 0 asymmetry (b)):
+ *   - live  `actions.appSignOn.verificationMethod.constraints[]` — NESTED OBJECTS.
+ *   - tfstate `values.constraints` — a List of String, each a `jsonencode()`'d object.
+ * Both are normalized to THIS shape. Only the strength-relevant fields are kept: a possession
+ * `phishingResistant`/`hardwareProtection` = "REQUIRED" is what promotes a 2FA rule to the
+ * phishing-resistant band in `policy-strength.ts` (M15 Phase B).
+ */
+export interface RuleConstraint {
+  knowledge?: { required?: boolean; types?: string[] };
+  possession?: {
+    required?: boolean;
+    deviceBound?: string;
+    hardwareProtection?: string;
+    phishingResistant?: string;
+  };
+}
+
 /** A normalized resource record — a tagged union build-graph can switch on. */
 export type ParsedResource =
   | {
@@ -74,6 +93,45 @@ export type ParsedResource =
       priority?: number;
       /** Okta lifecycle status; undefined => ACTIVE. */
       status?: string;
+    }
+  /**
+   * One rule of an app auth policy (`okta_app_signon_policy_rule` / live `GET /policies/{id}/rules`).
+   * NOT a graph node — rules are policy-internal (see model.ts `NodeKind`); captured so M15's
+   * strength model (`policy-strength.ts`, Phase B) can derive a policy's band from its rules'
+   * CONTENTS, not just which policy applies. The two paths normalize to this ONE shape despite
+   * differing encodings (Phase 0 findings): `access`/`factorMode`/`assuranceType`/`reauthenticateIn`
+   * are top-level snake_case in tfstate but nested under `actions.appSignOn(.verificationMethod)`
+   * live; `constraints` is a JSON-string list (tfstate) vs nested objects (live). The Okta
+   * auto-created catch-all rule is `system: true` and returned LIVE but ABSENT from tfstate
+   * (unmanaged) — the one documented tfstate/live rule asymmetry, not a bug.
+   */
+  | {
+      kind: "AppAuthPolicyRule";
+      id: string;
+      /** The policy this rule belongs to (tfstate `policy_id` / the live capture's map key). */
+      policyId: string;
+      name: string;
+      address: string;
+      /** Evaluation priority (lower = first). The system catch-all is always the highest number. */
+      priority?: number;
+      /** Okta lifecycle status (`ACTIVE`|`INACTIVE`); undefined => ACTIVE. INACTIVE => excluded from the band (M12 rule). */
+      status?: string;
+      /** true = Okta's built-in catch-all rule. Live-only (the catch-all is unmanaged, absent from tfstate). */
+      system?: boolean;
+      /** `ALLOW` | `DENY`. DENY is recorded as evidence but does NOT set the weakest-ALLOW floor (Phase 0 D1). */
+      access: string;
+      /** `1FA` | `2FA` | `2FA_If_Possible` | … Kept LITERAL; the strength model classifies, never guesses. */
+      factorMode?: string;
+      /** Verification `type`, e.g. `ASSURANCE` (tfstate `type` / live `verificationMethod.type`). */
+      assuranceType?: string;
+      /** Re-auth frequency, ISO-8601 (tfstate `re_authentication_frequency` / live `reauthenticateIn`). */
+      reauthenticateIn?: string;
+      /** Authenticator-class constraints, normalized from both encodings (empty when the rule has none). */
+      constraints: RuleConstraint[];
+      /** Group ids the rule is scoped to (tfstate `groups_included` / live `conditions.people.groups.include`); carried so Phase C evidence stays honest about SCOPE. */
+      groupsIncluded?: string[];
+      /** Network scope (e.g. `ANYWHERE`|`ZONE`); evidence-scope, like `groupsIncluded`. */
+      networkConnection?: string;
     }
   | {
       kind: "AppGroupAssignment";
@@ -156,6 +214,54 @@ function strArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+/**
+ * Project an already-parsed constraint object (from either path) onto the strength-relevant
+ * `RuleConstraint` shape. Defensive: an input that isn't an object, or is missing a class, yields
+ * an empty/partial constraint — never throws. Shared by the tfstate parser (post-JSON.parse) and
+ * the live mapper so both paths land on ONE normal form (the equivalence oracle depends on it).
+ */
+export function toRuleConstraint(raw: unknown): RuleConstraint {
+  if (!raw || typeof raw !== "object") return {};
+  const o = raw as { knowledge?: unknown; possession?: unknown };
+  const out: RuleConstraint = {};
+  if (o.knowledge && typeof o.knowledge === "object") {
+    const k = o.knowledge as { required?: unknown; types?: unknown };
+    const knowledge: NonNullable<RuleConstraint["knowledge"]> = {};
+    if (typeof k.required === "boolean") knowledge.required = k.required;
+    if (Array.isArray(k.types)) knowledge.types = k.types.filter((t): t is string => typeof t === "string");
+    out.knowledge = knowledge;
+  }
+  if (o.possession && typeof o.possession === "object") {
+    const p = o.possession as Record<string, unknown>;
+    const possession: NonNullable<RuleConstraint["possession"]> = {};
+    if (typeof p.required === "boolean") possession.required = p.required;
+    if (typeof p.deviceBound === "string") possession.deviceBound = p.deviceBound;
+    if (typeof p.hardwareProtection === "string") possession.hardwareProtection = p.hardwareProtection;
+    if (typeof p.phishingResistant === "string") possession.phishingResistant = p.phishingResistant;
+    out.possession = possession;
+  }
+  return out;
+}
+
+/**
+ * tfstate `constraints` (List of String, each a `jsonencode()`'d object) -> `RuleConstraint[]`.
+ * A malformed element is SKIPPED rather than throwing — the parser must not crash on a shape it
+ * can't read; the strength model treats an unclassifiable rule as `unknown`, never a guess.
+ */
+function parseConstraintStrings(v: unknown): RuleConstraint[] {
+  if (!Array.isArray(v)) return [];
+  const out: RuleConstraint[] = [];
+  for (const el of v) {
+    if (typeof el !== "string") continue;
+    try {
+      out.push(toRuleConstraint(JSON.parse(el)));
+    } catch {
+      // Unparseable constraint string — skip it rather than crash the whole parse.
+    }
+  }
+  return out;
+}
+
 /** Depth-first collect of every resource across root + nested child modules, in a stable order. */
 function collectResources(mod: RawModule): RawResource[] {
   const here = mod.resources ?? [];
@@ -215,6 +321,30 @@ function normalizeResource(r: RawResource): ParsedResource[] {
           status: str(values.status) || undefined,
         },
       ];
+
+    case "okta_app_signon_policy_rule": {
+      const groups = strArray(values.groups_included);
+      return [
+        {
+          kind: "AppAuthPolicyRule",
+          id,
+          policyId: str(values.policy_id),
+          name: str(values.name),
+          address,
+          priority: num(values.priority),
+          status: str(values.status) || undefined,
+          // The catch-all is unmanaged (never in tfstate), but carry `system` faithfully if present.
+          system: values.system === true || undefined,
+          access: str(values.access),
+          factorMode: str(values.factor_mode) || undefined,
+          assuranceType: str(values.type) || undefined,
+          reauthenticateIn: str(values.re_authentication_frequency) || undefined,
+          constraints: parseConstraintStrings(values.constraints),
+          groupsIncluded: groups.length > 0 ? groups : undefined,
+          networkConnection: str(values.network_connection) || undefined,
+        },
+      ];
+    }
 
     case "okta_app_user":
       return [

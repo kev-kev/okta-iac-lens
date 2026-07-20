@@ -57,6 +57,9 @@ async function main(): Promise<void> {
     "policies-signon.json": snapshot.globalSessionPolicies,
     "app-signon-policies.json": snapshot.appAuthPolicies,
     "apps-groups.json": snapshot.appGroupAssignments,
+    // M15: GET /policies/{id}/rules per ACCESS_POLICY, now folded into the snapshot by
+    // readTenantSnapshot (keyed by policy id). sanitize-captures already scrubs this file.
+    "app-signon-policy-rules.json": snapshot.policyRules,
   };
   for (const [file, data] of Object.entries(captures)) {
     await writeFile(new URL(file, CAPTURE_DIR), JSON.stringify(data, null, 2));
@@ -99,41 +102,15 @@ async function main(): Promise<void> {
     console.log(`  - ${p.id}  name=${JSON.stringify(p.name)}  system=${p.system}`);
   }
 
-  // --- M15 Phase 0: app sign-on policy RULES ----------------------------------
-  // Capture GET /policies/{id}/rules for every ACCESS_POLICY (custom Strict-Auth AND the
-  // system org-default), so the strength-band fact table can be checked against real rule
-  // shapes before any rule parser is written. Sequential per-policy — same rate-limit posture
-  // as the per-app group reads. RAW JSON only; no normalization here.
-  const rulesByPolicy: Record<string, unknown[]> = {};
+  // --- M15: app sign-on policy RULES ------------------------------------------
+  // The rules were fetched into snapshot.policyRules by readTenantSnapshot (GET /policies/{id}/rules
+  // per ACCESS_POLICY — custom Strict-Auth, the system org-default, and the built-ins). Print the
+  // strength-bearing fields so a live capture can be eyeballed against the fact table + map-api output.
+  console.log(`\nApp sign-on policy RULES (M15 — strength-bearing fields):`);
   for (const p of snapshot.appAuthPolicies) {
-    rulesByPolicy[p.id] = await reader.listPolicyRules(p.id);
-  }
-  await writeFile(
-    new URL("app-signon-policy-rules.json", CAPTURE_DIR),
-    JSON.stringify(rulesByPolicy, null, 2),
-  );
-  console.log(`\nApp sign-on policy RULES (M15 Phase 0 — strength-bearing fields):`);
-  for (const p of snapshot.appAuthPolicies) {
-    const rules = rulesByPolicy[p.id] ?? [];
+    const rules = snapshot.policyRules[p.id] ?? [];
     console.log(`  ${JSON.stringify(p.name)} (${p.id})  system=${p.system}  — ${rules.length} rule(s):`);
-    for (const r of rules) {
-      const rr = r as {
-        name?: string;
-        status?: string;
-        priority?: number;
-        system?: boolean;
-        actions?: {
-          appSignOn?: {
-            access?: string;
-            verificationMethod?: {
-              factorMode?: string;
-              type?: string;
-              reauthenticateIn?: string;
-              constraints?: unknown[];
-            };
-          };
-        };
-      };
+    for (const rr of rules) {
       const asn = rr.actions?.appSignOn;
       const vm = asn?.verificationMethod;
       // Show which authenticator classes each constraint object carries (knowledge / possession /

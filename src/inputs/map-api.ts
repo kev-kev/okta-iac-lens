@@ -18,6 +18,7 @@
  *    tfstate path but null here — acceptable, flagged for M3 reconciliation.
  */
 
+import { toRuleConstraint } from "../core/parse-tfstate.js";
 import type { ParsedResource } from "../core/parse-tfstate.js";
 import type { OktaApiSnapshot, RawApp } from "./okta-api.js";
 
@@ -126,6 +127,46 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
       priority: policy.priority,
       status: policy.status || undefined,
     });
+  }
+
+  // App-auth policy RULES (M15 Phase A). Emit an AppAuthPolicyRule per rule, but ONLY for APP-typed
+  // access policies — the same resourceType gate the node loop uses, so a non-APP ACCESS_POLICY (e.g.
+  // END_USER_ACCOUNT_MANAGEMENT, "Okta Account Management Policy") does NOT contribute phantom app
+  // rules. Unlike the node loop, SYSTEM policies are KEPT here: the org-default's rules are the source
+  // of its strength band (Phase 0), even though the policy itself isn't a managed node.
+  const appTypedPolicyIds = new Set(
+    snapshot.appAuthPolicies
+      .filter((p) => {
+        const rt = p._embedded?.resourceType;
+        return rt == null || rt === "APP";
+      })
+      .map((p) => p.id),
+  );
+  for (const [policyId, rules] of Object.entries(snapshot.policyRules ?? {})) {
+    if (!appTypedPolicyIds.has(policyId)) continue;
+    for (const rule of rules) {
+      const appSignOn = rule.actions?.appSignOn;
+      const vm = appSignOn?.verificationMethod;
+      const constraints = Array.isArray(vm?.constraints) ? vm.constraints.map(toRuleConstraint) : [];
+      const groups = rule.conditions?.people?.groups?.include ?? [];
+      out.push({
+        kind: "AppAuthPolicyRule",
+        id: rule.id,
+        policyId,
+        name: rule.name,
+        address: `okta-api:app_signon_policy_rule/${policyId}/${rule.id}`,
+        priority: rule.priority,
+        status: rule.status || undefined,
+        system: rule.system === true || undefined,
+        access: appSignOn?.access ?? "",
+        factorMode: vm?.factorMode || undefined,
+        assuranceType: vm?.type || undefined,
+        reauthenticateIn: vm?.reauthenticateIn || undefined,
+        constraints,
+        groupsIncluded: groups.length > 0 ? groups : undefined,
+        networkConnection: rule.conditions?.network?.connection || undefined,
+      });
+    }
   }
 
   for (const [appId, rows] of Object.entries(snapshot.appGroupAssignments)) {
