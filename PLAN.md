@@ -50,7 +50,7 @@ Two design forks were resolved to their recommended defaults (both **revisitable
 
 Per-**policy** band = the **weakest band among its ACTIVE ALLOW rules** (2 < 3 < 4). Special cases: ACTIVE rules exist but **none ALLOW** (all DENY) → `deny-all` (strongest); **no readable ACTIVE rules** (e.g. tfstate policy with only the unmanaged catch-all) → `unknown`. INACTIVE rules are excluded (the M12 rule). Ordinal for comparison: `deny-all`(4) > `phishing-resistant-2fa`(3) > `two-factor`(2) > `single-factor`(1); `unknown` compares to nothing.
 
-**Phase 0 status:** shapes verified vs docs ✅ · seed rules written (`seed/main.tf` constructs 5a–5c) ✅ · capture plumbing added (`HttpOktaReader.listPolicyRules`, `live-smoke` writes+prints, `sanitize-captures` includes the new file) ✅ · **live capture DONE (2026-07-19)** ✅ · sanitize + final DENY-rule apply pending. Phase A starts once the fixture is regenerated green.
+**Phase 0 status: COMPLETE (2026-07-20).** shapes verified vs docs + live capture ✅ · seed rules applied — 5a (phishing-resistant 2FA) + 5b (1FA bypass); **5c DENY dropped** (OFF_NETWORK invalid once MULTIPLE_NETWORK_ZONES is enabled; `deny-all` → synthetic Phase B tests) ✅ · capture plumbing (`HttpOktaReader.listPolicyRules`, `live-smoke`, `sanitize-captures`) ✅ · fixtures regenerated + sanitized, 226 green ✅ · committed on `m15-policy-strength` (6278005, 3d918cc). Phase A next.
 
 **Phase 0 LIVE CONFIRMATION (2026-07-19 capture, `integrator-1546176`):** ALLOW-band shapes match the fact table end-to-end. Findings that refine the model:
 
