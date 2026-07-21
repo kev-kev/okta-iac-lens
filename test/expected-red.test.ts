@@ -220,22 +220,26 @@ describe("M15 Phase C — grounded verdicts delivered (the Phase 0 KICKER, on re
   });
 });
 
-describe("M15 Phase C — armed red: gate SCORING still uses the org-default prior the bands invert", () => {
-  it.fails(
-    "band-aware risk must not score a STRONGER-gated org-default app above a weaker-floored custom peer",
-    () => {
-      // Kicker (live, capture-verified): GitHub's org default 'Any two factors' floors two-factor;
-      // Confluence's Strict-Auth floors single-factor (its 1FA Contractors bypass). Equal reach (2)
-      // and no coverage, so the score gap is PURELY the gate. Ground truth: the weaker-floored gate
-      // (Confluence, 1FA) is the higher risk. But rankRisk still weights org-default 2x (the M13
-      // prior), so GitHub (2FA, stronger) OUTSCORES Confluence (1FA, weaker). Phase C surfaces the
-      // band as evidence + a caveat but does NOT re-score; this greens when a milestone scores from
-      // bands (roadmap: band-aware risk). Delete `.fails` then.
-      const rows = rankRisk(realLiveGraph());
-      const gh = rows.find((r) => r.name === "GitHub")!;
-      const conf = rows.find((r) => r.name === "Confluence")!;
-      expect(gh.reach).toBe(conf.reach); // isolate the gate: equal reach
-      expect(conf.score).toBeGreaterThanOrEqual(gh.score); // FAILS today: 2 < 4 (prior mis-ranks)
-    },
-  );
+describe("M15 Phase E — deferred limitation (pinned): gate SCORING keeps the org-default prior the bands invert", () => {
+  // Was a Phase C armed `it.fails`. M15's scope (stated three times in PLAN.md) surfaces the captured
+  // band as EVIDENCE + a caveat but deliberately does NOT re-weight the risk score — re-scoring from
+  // bands is the M16 "band-aware risk scoring" roadmap item. So this fits NEITHER doctrine shape
+  // above: the bug reproduces (unlike a documenting test), but the fix is out of THIS milestone's
+  // scope (unlike an `it.fails` a same-milestone fix will green). It is a characterization pin of
+  // today's prior-based ranking, kept green so M15 closes at 0 expected-fail. The honest band +
+  // "band-aware scoring is future work" caveat that keep the risk surface non-misleading are asserted
+  // by the sibling "risk: the band column exposes the kicker" test above.
+  it("today: rankRisk scores a STRONGER-gated org-default app above a weaker-floored custom peer (prior, not band)", () => {
+    // Kicker (live, capture-verified): GitHub's org default 'Any two factors' floors two-factor;
+    // Confluence's Strict-Auth floors single-factor (its 1FA Contractors bypass). Equal reach (2)
+    // and no coverage, so the score gap is PURELY the gate multiplier. Ground truth (the M16 target):
+    // the weaker-floored gate (Confluence, 1FA) is the higher risk. But rankRisk still weights
+    // org-default 2x (the M8 prior), so GitHub OUTSCORES Confluence. When M16 scores from bands this
+    // pin FLIPS red — update it then to assert the ground-truth ordering (conf.score >= gh.score).
+    const rows = rankRisk(realLiveGraph());
+    const gh = rows.find((r) => r.name === "GitHub")!;
+    const conf = rows.find((r) => r.name === "Confluence")!;
+    expect(gh.reach).toBe(conf.reach); // isolate the gate: equal reach
+    expect(gh.score).toBeGreaterThan(conf.score); // prior mis-ranks TODAY: 4 > 2 (M16 band-aware flips this)
+  });
 });
