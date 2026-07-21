@@ -11,10 +11,22 @@
 import { describe, expect, it } from "vitest";
 import type { ParsedResource, RuleConstraint } from "../src/core/parse-tfstate.js";
 import {
+  appAuthPolicyRules,
   compareBands,
   computePolicyStrength,
+  describeBand,
+  formatPolicyFloor,
+  formatStrengthVerdict,
+  ORG_DEFAULT_POLICY_LABEL,
+  orgDefaultPolicyId,
+  outlierStrengthVerdict,
   policyStrengthIndex,
   strengthForPolicy,
+  strengthResolver,
+  strengthVerdict,
+  type PolicyStrength,
+  type StrengthBand,
+  type StrengthEvidence,
 } from "../src/analysis/policy-strength.js";
 import { realLiveResources, realStateResources } from "./fixture.js";
 
@@ -260,5 +272,150 @@ describe("policy-strength — real capture (Strict-Auth vs org-default 'Any two 
     const strict = strengthForPolicy(idx, STRICT).band;
     const orgDefault = strengthForPolicy(idx, ORG_DEFAULT).band;
     expect(compareBands(strict, orgDefault)).toBe("weaker");
+  });
+});
+
+// ── Phase C: the shared verdict formatter + resolver (the ONE anti-drift surface) ─────────────────
+
+/** A PolicyStrength literal for formatter tests; `ordinal`/counts are irrelevant to phrasing. */
+function ps(band: StrengthBand, evidence?: Partial<StrengthEvidence>): PolicyStrength {
+  return {
+    policyId: "p",
+    band,
+    ordinal: null,
+    evidence: evidence ? { ruleId: "r", ruleName: "R", access: "ALLOW", ...evidence } : null,
+    activeRuleCount: 1,
+    allowRuleCount: 1,
+    denyRuleCount: 0,
+  };
+}
+
+describe("describeBand — honest requirement phrases", () => {
+  it("phrases each band by its weakest way in", () => {
+    expect(describeBand("single-factor")).toContain("1FA");
+    expect(describeBand("two-factor")).toContain("2FA");
+    expect(describeBand("phishing-resistant-2fa")).toContain("phishing-resistant");
+    expect(describeBand("deny-all")).toContain("denies");
+    expect(describeBand("unknown")).toContain("no readable rules");
+  });
+});
+
+describe("strengthVerdict — grounded only when BOTH bands are known", () => {
+  it("directs subject vs baseline when both bands are known", () => {
+    expect(strengthVerdict(ps("single-factor"), ps("two-factor"))).toMatchObject({ grounded: true, direction: "weaker" });
+    expect(strengthVerdict(ps("two-factor"), ps("single-factor"))).toMatchObject({ grounded: true, direction: "stronger" });
+    expect(strengthVerdict(ps("two-factor"), ps("two-factor"))).toMatchObject({ grounded: true, direction: "same" });
+  });
+
+  it("is UNGROUNDED whenever either side is unknown (the M13 prior stands)", () => {
+    expect(strengthVerdict(ps("unknown"), ps("two-factor"))).toEqual({ grounded: false });
+    expect(strengthVerdict(ps("two-factor"), ps("unknown"))).toEqual({ grounded: false });
+    expect(strengthVerdict(ps("unknown"), ps("unknown"))).toEqual({ grounded: false });
+  });
+});
+
+describe("formatStrengthVerdict / formatPolicyFloor — the exact strings surfaces render", () => {
+  it("formats a grounded verdict with both sides' bands, rules, and scope", () => {
+    const v = strengthVerdict(
+      ps("two-factor", { ruleName: "Catch-all" }),
+      ps("single-factor", { ruleName: "Bypass", groupsIncluded: ["g-con"] }),
+    );
+    expect(v.grounded).toBe(true);
+    if (!v.grounded) return;
+    expect(formatStrengthVerdict(v, "org default", "Strict-Auth")).toBe(
+      "stronger: org default requires two-factor (2FA) [rule 'Catch-all'], " +
+        "baseline Strict-Auth admits single-factor (1FA) [rule 'Bypass', scoped to 1 group]",
+    );
+  });
+
+  it("floor of a single policy; null when the band is unknown (never annotate an unread band)", () => {
+    expect(formatPolicyFloor(ps("single-factor", { ruleName: "Bypass" }))).toBe(
+      "admits single-factor (1FA) [rule 'Bypass']",
+    );
+    expect(formatPolicyFloor(ps("unknown"))).toBeNull();
+  });
+
+  it("omits the unrestricted ANYWHERE network but surfaces a real restriction", () => {
+    expect(formatPolicyFloor(ps("single-factor", { ruleName: "R", networkConnection: "ANYWHERE" }))).toBe(
+      "admits single-factor (1FA) [rule 'R']",
+    );
+    expect(formatPolicyFloor(ps("single-factor", { ruleName: "R", networkConnection: "ZONE" }))).toContain(
+      "network ZONE",
+    );
+  });
+});
+
+describe("orgDefaultPolicyId / strengthResolver — resolving the graph's null (org default) to a band", () => {
+  const STRICT = "rst12872f333b6350610";
+  const ORG_DEFAULT = "rst16ffbd575c05d891c";
+
+  it("finds the system org-default policy id live, and NONE in tfstate (the Phase 0 divergence)", () => {
+    expect(orgDefaultPolicyId(realLiveResources())).toBe(ORG_DEFAULT);
+    expect(orgDefaultPolicyId(realStateResources())).toBeNull();
+  });
+
+  it("live: forPolicyOrDefault(null) bands the org default (two-factor); a custom id bands directly", () => {
+    const r = strengthResolver(realLiveResources());
+    expect(r.forPolicyOrDefault(null).band).toBe("two-factor");
+    expect(r.orgDefault().band).toBe("two-factor");
+    expect(r.forPolicy(STRICT).band).toBe("single-factor");
+  });
+
+  it("tfstate: org default resolves to unknown (its rules aren't in state), but a captured custom policy still bands", () => {
+    const r = strengthResolver(realStateResources());
+    expect(r.forPolicyOrDefault(null).band).toBe("unknown");
+    expect(r.forPolicy(STRICT).band).toBe("single-factor");
+  });
+});
+
+// ── Phase D: appAuthPolicyRules + the shared outlier verdict (CLI/web/JSON anti-drift) ────────────
+describe("appAuthPolicyRules — the exact subset the envelope carries", () => {
+  it("extracts only AppAuthPolicyRule records (rules travel outside the graph)", () => {
+    const rules = appAuthPolicyRules(realLiveResources());
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules.every((r) => r.kind === "AppAuthPolicyRule")).toBe(true);
+    // Nothing else leaks through (Apps/Groups/etc. are not rules).
+    expect(rules.some((r) => (r as { kind: string }).kind !== "AppAuthPolicyRule")).toBe(false);
+  });
+
+  it("is empty when a resource set carries no rules (the idealized fixtures / a rule-less tenant)", () => {
+    expect(appAuthPolicyRules([])).toEqual([]);
+  });
+});
+
+describe("outlierStrengthVerdict — the ONE shared unit the CLI, web, and JSON render through", () => {
+  const STRICT = "rst12872f333b6350610";
+  const STRICT_NAME = "Strict-Auth";
+
+  it("grounds the KICKER live: org-default subject (null id) reads STRONGER than the peer-dominant Strict-Auth", () => {
+    const r = strengthResolver(realLiveResources());
+    const v = outlierStrengthVerdict(
+      r,
+      { policyId: null, policyName: null }, // GitHub's gate = org default (no node, no name)
+      { policyId: STRICT, policyName: STRICT_NAME },
+    );
+    expect(v.verdict.grounded).toBe(true);
+    if (v.verdict.grounded) expect(v.verdict.direction).toBe("stronger");
+    expect(v.subject.band).toBe("two-factor");
+    expect(v.baseline.band).toBe("single-factor");
+    // The null subject is labelled by the shared org-default label, and scope stays honest.
+    expect(v.line).toContain(`stronger: ${ORG_DEFAULT_POLICY_LABEL} requires two-factor (2FA)`);
+    expect(v.line).toContain("baseline Strict-Auth admits single-factor (1FA)");
+    expect(v.line).toContain("Contractors-Password-Bypass");
+    expect(v.line).toContain("scoped to 1 group");
+  });
+
+  it("stays ungrounded (line null) on tfstate, where the org-default subject band is unknown", () => {
+    const r = strengthResolver(realStateResources());
+    const v = outlierStrengthVerdict(
+      r,
+      { policyId: null, policyName: null },
+      { policyId: STRICT, policyName: STRICT_NAME },
+    );
+    expect(v.verdict.grounded).toBe(false);
+    expect(v.line).toBeNull();
+    // The structured sides are still returned (subject unknown, baseline known) for JSON consumers.
+    expect(v.subject.band).toBe("unknown");
+    expect(v.baseline.band).toBe("single-factor");
   });
 });

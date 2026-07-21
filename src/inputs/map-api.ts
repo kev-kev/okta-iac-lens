@@ -158,6 +158,9 @@ export function mapApiSnapshot(snapshot: OktaApiSnapshot): ParsedResource[] {
         priority: rule.priority,
         status: rule.status || undefined,
         system: rule.system === true || undefined,
+        // Flag the org-default (system) policy's rules so Phase C can band a null-policy app: the
+        // org-default is never a node, so this is the only carried signal of which policy it is.
+        policySystem: systemPolicyIds.has(policyId) || undefined,
         access: appSignOn?.access ?? "",
         factorMode: vm?.factorMode || undefined,
         assuranceType: vm?.type || undefined,

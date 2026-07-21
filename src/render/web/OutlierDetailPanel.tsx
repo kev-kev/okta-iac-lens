@@ -3,16 +3,36 @@
  * their dominant policy is ("in Engineering (11 apps): 9/11 peers behind Strict-Auth"). All data
  * comes pre-resolved on the OutlierRow — no graph joins here. "Org default" is the org-wide
  * default app sign-on policy, never "no auth".
+ *
+ * M15 Phase D: when a strength resolver is supplied, each divergence carries a grounded `↳` verdict
+ * (subject gate vs peer-dominant policy, both bands + deciding rule) — the SAME shared helper the
+ * CLI renders through. Ungrounded divergences (an unknown band) show no verdict and keep the prior.
  */
 import type { OutlierRow } from "../../analysis/policy-outliers.js";
+import { outlierStrengthVerdict, type StrengthResolver } from "../../analysis/policy-strength.js";
+import { outlierStrengthNote, type VerdictRegime } from "./strength-notes.js";
 
 export function OutlierDetailPanel({
   row,
+  strength,
+  regime,
   onOpenApp,
 }: {
   row: OutlierRow;
+  strength: StrengthResolver | null;
+  regime: VerdictRegime;
   onOpenApp: (appId: string) => void;
 }) {
+  /** Grounded verdict line for one finding, or null (ungrounded → keep the bare divergence). */
+  const verdictLine = (dominantPolicyId: string, dominantPolicyName: string): string | null =>
+    strength
+      ? outlierStrengthVerdict(
+          strength,
+          { policyId: row.appPolicyId, policyName: row.appPolicyName },
+          { policyId: dominantPolicyId, policyName: dominantPolicyName },
+        ).line
+      : null;
+
   return (
     <aside className="trace-panel">
       <div className="trace-head">
@@ -33,12 +53,16 @@ export function OutlierDetailPanel({
         Divergent peer groups ({row.findingCount})
       </h3>
       <ul className="trace-apps">
-        {row.findings.map((f) => (
-          <li key={f.groupId} className="outlier-finding">
-            in <strong>{f.groupName}</strong> ({f.peerCount} apps): {f.dominantCount}/{f.peerCount}{" "}
-            peers behind <strong>{f.dominantPolicyName}</strong>
-          </li>
-        ))}
+        {row.findings.map((f) => {
+          const line = verdictLine(f.dominantPolicyId, f.dominantPolicyName);
+          return (
+            <li key={f.groupId} className="outlier-finding">
+              in <strong>{f.groupName}</strong> ({f.peerCount} apps): {f.dominantCount}/
+              {f.peerCount} peers behind <strong>{f.dominantPolicyName}</strong>
+              {line && <span className="strength-verdict">↳ {line}</span>}
+            </li>
+          );
+        })}
         {row.findingCount > row.findings.length && (
           <li className="outlier-finding muted">
             …and {row.findingCount - row.findings.length} more peer groups
@@ -50,10 +74,7 @@ export function OutlierDetailPanel({
         View app in graph
       </button>
 
-      <p className="hint outlier-note">
-        Gate strength is a heuristic prior (org-default vs custom policy), not a factor-based verdict
-        (M15). This flags a divergence, not a proven weakness.
-      </p>
+      <p className="hint outlier-note">{outlierStrengthNote(regime)}</p>
     </aside>
   );
 }

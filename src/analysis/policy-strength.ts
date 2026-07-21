@@ -32,10 +32,19 @@
  * (Identity-Engine variance) is `unknown`, never defaulted.
  */
 
-import type { ParsedResource, RuleConstraint } from "../core/parse-tfstate.js";
+import type { AppAuthPolicyRule, ParsedResource, RuleConstraint } from "../core/parse-tfstate.js";
 
 /** One captured app-auth policy rule (the `ParsedResource` variant), from either capture path. */
-type PolicyRule = Extract<ParsedResource, { kind: "AppAuthPolicyRule" }>;
+type PolicyRule = AppAuthPolicyRule;
+
+/**
+ * The captured app-auth policy rules from a resource set — the exact subset the envelope carries
+ * (M15 Phase D) and the strength model consumes. One place so producers can't diverge on which
+ * records count as "rules".
+ */
+export function appAuthPolicyRules(resources: ParsedResource[]): AppAuthPolicyRule[] {
+  return resources.filter((r): r is AppAuthPolicyRule => r.kind === "AppAuthPolicyRule");
+}
 
 /**
  * A policy's strength band — a conservative FLOOR. The four ORDERED bands run weakest→strongest;
@@ -255,6 +264,20 @@ export function policyStrengthIndex(resources: ParsedResource[]): Map<string, Po
   return out;
 }
 
+/** The canonical `unknown` strength for a policy with no captured/readable rules — the single shape
+ * "absent = unknown, never a guess" resolves to (Phase 0 divergence; any policy the snapshot missed). */
+function unknownStrength(policyId: string): PolicyStrength {
+  return {
+    policyId,
+    band: "unknown",
+    ordinal: null,
+    evidence: null,
+    activeRuleCount: 0,
+    allowRuleCount: 0,
+    denyRuleCount: 0,
+  };
+}
+
 /**
  * Read a policy's strength from an index, defaulting to the canonical `unknown` result when the
  * policy has no captured rules (the tfstate-only-catch-all divergence, and any policy the snapshot
@@ -264,17 +287,47 @@ export function strengthForPolicy(
   index: Map<string, PolicyStrength>,
   policyId: string,
 ): PolicyStrength {
-  return (
-    index.get(policyId) ?? {
-      policyId,
-      band: "unknown",
-      ordinal: null,
-      evidence: null,
-      activeRuleCount: 0,
-      allowRuleCount: 0,
-      denyRuleCount: 0,
-    }
-  );
+  return index.get(policyId) ?? unknownStrength(policyId);
+}
+
+/**
+ * The id of the org-default (system) app-auth policy, or null when the snapshot carries none of its
+ * rules. Identified by the `policySystem` flag `map-api` stamps on that policy's rules — the
+ * org-default is NEVER a graph node, so this is the only channel a null-policy app has to its band.
+ * ALWAYS null on the tfstate path (state has no system policy — the documented Phase 0 divergence),
+ * so a null-policy app stays `unknown` there; live, it resolves to the system policy's band.
+ */
+export function orgDefaultPolicyId(resources: ParsedResource[]): string | null {
+  for (const r of resources) {
+    if (r.kind === "AppAuthPolicyRule" && r.policySystem) return r.policyId;
+  }
+  return null;
+}
+
+/**
+ * A resolver bound to one snapshot's rules: band ANY policy id, and — crucially — band the graph's
+ * "org default" (a null policy key, i.e. an app with no custom `protects` edge) by mapping it onto
+ * the system policy's band. Phase C's surfaces (outliers/risk/trace) all read strength through this
+ * ONE object so "null = org default" is resolved in a single place and they cannot diverge.
+ */
+export interface StrengthResolver {
+  /** Strength of a specific policy id (a custom `protects` edge / `authenticationPolicyId`). */
+  forPolicy(policyId: string): PolicyStrength;
+  /** The band an app with NO custom policy falls back to — the org default (`unknown` on tfstate). */
+  orgDefault(): PolicyStrength;
+  /** Band a nullable policy key the graph surfaces carry: `null` = org default, else `forPolicy`. */
+  forPolicyOrDefault(policyId: string | null): PolicyStrength;
+}
+
+export function strengthResolver(resources: ParsedResource[]): StrengthResolver {
+  const index = policyStrengthIndex(resources);
+  const orgId = orgDefaultPolicyId(resources);
+  const orgDefault = orgId ? strengthForPolicy(index, orgId) : unknownStrength("__org_default__");
+  return {
+    forPolicy: (id) => strengthForPolicy(index, id),
+    orgDefault: () => orgDefault,
+    forPolicyOrDefault: (id) => (id === null ? orgDefault : strengthForPolicy(index, id)),
+  };
 }
 
 /**
@@ -289,4 +342,143 @@ export function compareBands(a: StrengthBand, b: StrengthBand): StrengthComparis
   if (oa < ob) return "weaker";
   if (oa > ob) return "stronger";
   return "same";
+}
+
+// ── Grounded verdicts (Phase C) — the ONE shared formatter every surface renders through ──────────
+
+/**
+ * A grounded strength verdict: BOTH policies had captured, classifiable (non-`unknown`) bands, so a
+ * surface can state a direction backed by rule evidence instead of the M13 prior.
+ */
+export interface GroundedStrengthVerdict {
+  grounded: true;
+  /** `subject` compared AGAINST `baseline`. Never `incomparable` here — both bands are known. */
+  direction: "weaker" | "stronger" | "same";
+  subject: PolicyStrength;
+  baseline: PolicyStrength;
+}
+/**
+ * At least one side is `unknown`: no grounded direction exists, so the caller MUST keep its M13
+ * prior wording verbatim (the honesty rule — never invent a direction we cannot ground).
+ */
+export interface UngroundedStrengthVerdict {
+  grounded: false;
+}
+export type StrengthVerdict = GroundedStrengthVerdict | UngroundedStrengthVerdict;
+
+/**
+ * Compare a subject policy AGAINST a baseline. Grounded only when both bands are known; otherwise
+ * ungrounded (`grounded: false`) and the surface falls back to its prior. This is the single gate
+ * between "we read the rules" and "we're still on the M13 prior".
+ */
+export function strengthVerdict(subject: PolicyStrength, baseline: PolicyStrength): StrengthVerdict {
+  const direction = compareBands(subject.band, baseline.band);
+  if (direction === "incomparable") return { grounded: false };
+  return { grounded: true, direction, subject, baseline };
+}
+
+/**
+ * Human requirement phrase for a band — the easiest documented way in (the floor). `unknown` has no
+ * honest phrase, so it returns a plain "no readable rules"; the formatter never reaches it for a
+ * grounded verdict (both sides are known there).
+ */
+export function describeBand(band: StrengthBand): string {
+  switch (band) {
+    case "single-factor":
+      return "admits single-factor (1FA)";
+    case "two-factor":
+      return "requires two-factor (2FA)";
+    case "phishing-resistant-2fa":
+      return "requires phishing-resistant 2FA";
+    case "deny-all":
+      return "denies all access";
+    case "unknown":
+      return "has no readable rules";
+  }
+}
+
+/**
+ * Cite the deciding rule + its SCOPE, so the floor stays honest: a group/network-scoped bypass is
+ * a policy property, not proof every user reaches the app at that band (Phase 0). `ANYWHERE` is the
+ * unrestricted default and is omitted; a real network restriction is surfaced.
+ */
+function citeRule(s: PolicyStrength): string {
+  const e = s.evidence;
+  if (!e) return "";
+  const scope: string[] = [];
+  const groups = e.groupsIncluded?.length ?? 0;
+  if (groups > 0) scope.push(`scoped to ${groups} group${groups === 1 ? "" : "s"}`);
+  if (e.networkConnection && e.networkConnection !== "ANYWHERE") {
+    scope.push(`network ${e.networkConnection}`);
+  }
+  return ` [rule '${e.ruleName}'${scope.length > 0 ? `, ${scope.join(", ")}` : ""}]`;
+}
+
+/**
+ * Render a grounded verdict as one line, e.g.
+ *   "stronger: org default requires two-factor (2FA) [rule 'Catch-all'], baseline Strict-Auth
+ *    admits single-factor (1FA) [rule 'Contractors-Bypass', scoped to 1 group]".
+ * Labels are supplied by the caller (the graph names the policies; the org default has no node).
+ * ONE formatter for CLI and web so a verdict never drifts between surfaces.
+ */
+export function formatStrengthVerdict(
+  verdict: GroundedStrengthVerdict,
+  subjectLabel: string,
+  baselineLabel: string,
+): string {
+  const { direction, subject, baseline } = verdict;
+  return (
+    `${direction}: ${subjectLabel} ${describeBand(subject.band)}${citeRule(subject)}, ` +
+    `baseline ${baselineLabel} ${describeBand(baseline.band)}${citeRule(baseline)}`
+  );
+}
+
+/**
+ * One-line floor evidence for a SINGLE policy (no comparison): the band phrase + deciding rule with
+ * scope, e.g. "admits single-factor (1FA) [rule 'Contractors-Bypass', scoped to 1 group]". Returns
+ * null when the band is `unknown` — the caller then keeps the bare policy label (the M13 honesty
+ * rule: never annotate a band we did not read). Used by trace/risk to surface a gate's captured floor.
+ */
+export function formatPolicyFloor(s: PolicyStrength): string | null {
+  if (s.band === "unknown") return null;
+  return `${describeBand(s.band)}${citeRule(s)}`;
+}
+
+/**
+ * The canonical label for the org-default app sign-on policy (which has no graph node, hence no
+ * name of its own). ONE string so the CLI, the web panels, and the JSON never drift on how a
+ * null-policy gate is named in a verdict.
+ */
+export const ORG_DEFAULT_POLICY_LABEL = "org default app sign-on policy";
+
+/**
+ * One policy-outlier finding resolved to a strength verdict — the SINGLE shared unit every outlier
+ * surface (CLI text, web panel/table, `--json`) renders through, so they cannot diverge on the
+ * grounded/prior decision, the org-default resolution, or the verdict wording. Given the outlier
+ * app's own gate (`subject`, whose id is `null` for the org default) and its peer set's dominant
+ * policy (`baseline`, always a custom id), it returns:
+ *  - `subject`/`baseline` — both sides' `PolicyStrength` (for structured/JSON consumers),
+ *  - `verdict` — grounded only when BOTH bands are known,
+ *  - `line` — the formatted grounded verdict, or `null` when ungrounded (the caller then keeps its
+ *    M13 prior VERBATIM — the honesty rule).
+ */
+export interface OutlierStrengthVerdict {
+  subject: PolicyStrength;
+  baseline: PolicyStrength;
+  verdict: StrengthVerdict;
+  line: string | null;
+}
+
+export function outlierStrengthVerdict(
+  resolver: StrengthResolver,
+  outlier: { policyId: string | null; policyName: string | null },
+  dominant: { policyId: string; policyName: string },
+): OutlierStrengthVerdict {
+  const subject = resolver.forPolicyOrDefault(outlier.policyId);
+  const baseline = resolver.forPolicy(dominant.policyId);
+  const verdict = strengthVerdict(subject, baseline);
+  const line = verdict.grounded
+    ? formatStrengthVerdict(verdict, outlier.policyName ?? ORG_DEFAULT_POLICY_LABEL, dominant.policyName)
+    : null;
+  return { subject, baseline, verdict, line };
 }

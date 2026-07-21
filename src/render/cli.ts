@@ -15,10 +15,27 @@ import type {
 } from "../core/access-paths.js";
 import type { CoverageBucket, CoverageReport } from "../analysis/coverage.js";
 import type { RiskRow } from "../analysis/rank-risk.js";
-import type { OutlierReport } from "../analysis/policy-outliers.js";
+import type { OutlierReport, OutlierRow } from "../analysis/policy-outliers.js";
+import {
+  formatPolicyFloor,
+  ORG_DEFAULT_POLICY_LABEL,
+  outlierStrengthVerdict,
+  type StrengthResolver,
+} from "../analysis/policy-strength.js";
 import { recommend } from "../analysis/recommendations.js";
 
 export type OutputFormat = "text" | "json";
+
+/**
+ * Trailing "  ·  floor: …" annotation for a policy line, from captured rules (M15 Phase C). Empty
+ * when no resolver is supplied or the band is `unknown` (keep the bare label — never annotate a
+ * band we didn't read). `policyId` is null for the org default, resolved via the resolver.
+ */
+function floorSuffix(policyId: string | null, strength?: StrengthResolver): string {
+  if (!strength) return "";
+  const floor = formatPolicyFloor(strength.forPolicyOrDefault(policyId));
+  return floor ? `  ·  floor: ${floor}` : "";
+}
 
 /**
  * How a group populates a user: "populated by rule <name>: <expr>" (membership MAY be via that
@@ -71,7 +88,11 @@ export function renderSummary(
   return lines.join("\n");
 }
 
-export function renderTrace(result: TraceResult, format: OutputFormat): string {
+export function renderTrace(
+  result: TraceResult,
+  format: OutputFormat,
+  strength?: StrengthResolver,
+): string {
   if (format === "json") return JSON.stringify(result, null, 2);
 
   const lines: string[] = [];
@@ -83,10 +104,10 @@ export function renderTrace(result: TraceResult, format: OutputFormat): string {
   } else {
     for (const app of result.apps) {
       const policy = result.appAuthPolicies[app.id];
-      const policyLabel = policy
-        ? `${policy.name} (${policy.id})`
-        : "— org default app sign-on policy";
-      lines.push(`  - ${app.name} (${app.id})  ·  app auth policy: ${policyLabel}`);
+      const label = policy ? `${policy.name} (${policy.id})` : "— org default app sign-on policy";
+      lines.push(
+        `  - ${app.name} (${app.id})  ·  app auth policy: ${label}${floorSuffix(policy ? policy.id : null, strength)}`,
+      );
     }
   }
   lines.push("");
@@ -95,7 +116,11 @@ export function renderTrace(result: TraceResult, format: OutputFormat): string {
   return lines.join("\n");
 }
 
-export function renderAppTrace(result: AppTraceResult, format: OutputFormat): string {
+export function renderAppTrace(
+  result: AppTraceResult,
+  format: OutputFormat,
+  strength?: StrengthResolver,
+): string {
   if (format === "json") return JSON.stringify(result, null, 2);
 
   const lines: string[] = [];
@@ -113,7 +138,10 @@ export function renderAppTrace(result: AppTraceResult, format: OutputFormat): st
   for (const r of rules) lines.push(`  - ${r.name} (${r.id})`);
   lines.push("");
   const p = result.authPolicy;
-  lines.push(`App auth policy: ${p ? `${p.name} (${p.id})` : "— org default app sign-on policy"}`);
+  lines.push(
+    `App auth policy: ${p ? `${p.name} (${p.id})` : "— org default app sign-on policy"}` +
+      floorSuffix(p ? p.id : null, strength),
+  );
   return lines.join("\n");
 }
 
@@ -129,7 +157,11 @@ const GATE_PRIOR_CAVEAT =
 
 const INDIVIDUAL_VIA = "individual assignment (okta_app_user — not a group grant)";
 
-export function renderUserTrace(result: UserTraceResult, format: OutputFormat): string {
+export function renderUserTrace(
+  result: UserTraceResult,
+  format: OutputFormat,
+  strength?: StrengthResolver,
+): string {
   if (format === "json") return JSON.stringify(result, null, 2);
 
   const individualIds = new Set(result.individualApps.map((a) => a.id));
@@ -149,8 +181,9 @@ export function renderUserTrace(result: UserTraceResult, format: OutputFormat): 
             .filter((v) => v.apps.some((a) => a.id === app.id))
             .map((v) => v.group.name)
             .join(", ");
+      const gate = result.appAuthPolicies[app.id];
       lines.push(
-        `  - ${app.name} (${app.id})  ·  via: ${via}  ·  app gate: ${policyLabel(result.appAuthPolicies[app.id])}`,
+        `  - ${app.name} (${app.id})  ·  via: ${via}  ·  app gate: ${policyLabel(gate)}${floorSuffix(gate ? gate.id : null, strength)}`,
       );
     }
     if (result.individualApps.length > 0) {
@@ -184,7 +217,11 @@ export function renderUserTrace(result: UserTraceResult, format: OutputFormat): 
   return lines.join("\n");
 }
 
-export function renderUserAppExplain(result: UserAppExplain, format: OutputFormat): string {
+export function renderUserAppExplain(
+  result: UserAppExplain,
+  format: OutputFormat,
+  strength?: StrengthResolver,
+): string {
   if (format === "json") return JSON.stringify(result, null, 2);
 
   const lines: string[] = [];
@@ -192,6 +229,7 @@ export function renderUserAppExplain(result: UserAppExplain, format: OutputForma
   lines.push(`App: ${result.app.name} (${result.app.id})`);
   lines.push("");
 
+  const gateFloor = floorSuffix(result.authPolicy ? result.authPolicy.id : null, strength);
   if (result.hasAccess) {
     lines.push(`Result: PROVISIONED — reachable via ${result.paths.length} group(s).`);
     for (const p of result.paths) {
@@ -201,7 +239,7 @@ export function renderUserAppExplain(result: UserAppExplain, format: OutputForma
           `  ·  session gate: ${sessionPolicyLabel(gsp)}`,
       );
     }
-    lines.push(`App gate: ${policyLabel(result.authPolicy)}`);
+    lines.push(`App gate: ${policyLabel(result.authPolicy)}${gateFloor}`);
   } else {
     lines.push(
       `Result: NOT PROVISIONED — the user is in none of the ${result.grantingGroups.length} group(s) that grant this app.`,
@@ -220,7 +258,7 @@ export function renderUserAppExplain(result: UserAppExplain, format: OutputForma
     } else {
       for (const r of result.governingRules) lines.push(`  - ${r.name} (${r.id}): \`${r.expression}\``);
     }
-    lines.push(`App gate (would apply): ${policyLabel(result.authPolicy)}`);
+    lines.push(`App gate (would apply): ${policyLabel(result.authPolicy)}${gateFloor}`);
   }
 
   lines.push("");
@@ -228,14 +266,46 @@ export function renderUserAppExplain(result: UserAppExplain, format: OutputForma
   return lines.join("\n");
 }
 
-export function renderRisk(rows: RiskRow[], format: OutputFormat): string {
-  if (format === "json") return JSON.stringify(rows, null, 2);
+/** Compact band label for the risk table's `band` column. `unknown`/no-band renders as "—". */
+const BAND_ABBREV: Record<string, string> = {
+  "single-factor": "1FA",
+  "two-factor": "2FA",
+  "phishing-resistant-2fa": "PR-2FA",
+  "deny-all": "DENY",
+  unknown: "—",
+};
+
+export function renderRisk(
+  rows: RiskRow[],
+  format: OutputFormat,
+  /** Rule-derived strength (M15 Phase C). When supplied, App rows show their gate's captured band
+   * in the `band` column; the SCORE still uses the prior (a known gap — see the note). */
+  strength?: StrengthResolver,
+): string {
+  if (format === "json") {
+    // Structured band (M15 Phase D): attach each App row's captured gate band, so a JSON consumer
+    // sees the same evidence the text `band` column shows. The SCORE is unchanged (still the prior
+    // — the armed red). Group rows carry no band (session-gate strength is M15-deferred, D2).
+    if (!strength) return JSON.stringify(rows, null, 2);
+    const enriched = rows.map((r) => {
+      if (r.kind !== "App") return r;
+      const s = strength.forPolicyOrDefault(r.gatePolicyId ?? null);
+      return { ...r, band: s.band, bandOrdinal: s.ordinal };
+    });
+    return JSON.stringify(enriched, null, 2);
+  }
+
+  // App gate band from captured rules; Groups have no band (session gate is M15-deferred).
+  const bandOf = (r: RiskRow): string =>
+    strength && r.kind === "App"
+      ? BAND_ABBREV[strength.forPolicyOrDefault(r.gatePolicyId ?? null).band] ?? "—"
+      : "—";
 
   const lines: string[] = [];
   lines.push("Risk-ranked resources — widest reach × default-gate prior × not-in-Terraform first");
   lines.push("");
 
-  lines.push("  " + "#".padStart(3) + "  " + "resource".padEnd(24) + "kind".padEnd(7) + "reach".padStart(6) + "  " + "gate".padEnd(25) + "iac".padEnd(11) + "score");
+  lines.push("  " + "#".padStart(3) + "  " + "resource".padEnd(24) + "kind".padEnd(7) + "reach".padStart(6) + "  " + "gate".padEnd(25) + "band".padEnd(8) + "iac".padEnd(11) + "score");
   rows.forEach((r, i) => {
     const iac = r.iac === "unknown" ? "n/a" : r.iac;
     const gate = `${r.gate} (${r.gatePrior})`;
@@ -246,17 +316,71 @@ export function renderRisk(rows: RiskRow[], format: OutputFormat): string {
         r.kind.padEnd(7) +
         `${r.reach}`.padStart(6) + "  " +
         gate.padEnd(25) +
+        bandOf(r).padEnd(8) +
         iac.padEnd(11) +
         `${r.score}`,
     );
   });
   lines.push("");
-  lines.push(GATE_PRIOR_CAVEAT);
+  if (strength) {
+    // The band column is factor evidence, so the old "not a factor-based verdict" caveat would be
+    // stale (Phase E). Rephrase: the SCORE is still the prior (red armed), the band is the evidence.
+    lines.push(
+      "Note: the band column is captured-rule evidence (M15) — the gate's weakest way in. The SCORE",
+    );
+    lines.push(
+      "still ranks by the org-default-vs-custom prior, NOT the band: where a custom gate bands weaker",
+    );
+    lines.push(
+      "than an org-default app yet scores lower-risk, trust the band (band-aware scoring is future work).",
+    );
+  } else {
+    lines.push(GATE_PRIOR_CAVEAT);
+  }
   return lines.join("\n");
 }
 
-export function renderOutliers(report: OutlierReport, format: OutputFormat): string {
-  if (format === "json") return JSON.stringify(report, null, 2);
+export function renderOutliers(
+  report: OutlierReport,
+  format: OutputFormat,
+  /** Rule-derived strength (M15 Phase C). When supplied, findings whose BOTH bands are known carry
+   * a grounded verdict; absent/unknown bands keep the M13 divergence prior. Omit = prior everywhere. */
+  strength?: StrengthResolver,
+): string {
+  // Every finding's strength verdict, resolved ONCE through the shared helper so the text `↳`
+  // lines, the `--json` block, and the web panel can never disagree (anti-drift). Empty when no
+  // resolver was supplied — then every surface keeps the M13 prior.
+  const verdictsOf = (r: OutlierRow) =>
+    strength
+      ? r.findings.map((f) =>
+          outlierStrengthVerdict(
+            strength,
+            { policyId: r.appPolicyId, policyName: r.appPolicyName },
+            { policyId: f.dominantPolicyId, policyName: f.dominantPolicyName },
+          ),
+        )
+      : [];
+
+  if (format === "json") {
+    // Structured verdicts (M15 Phase D): the machine-readable twin of the `↳` lines. Attached only
+    // when a resolver is supplied; each side's full `PolicyStrength` (band + cited rule) rides along.
+    if (!strength) return JSON.stringify(report, null, 2);
+    const rows = report.rows.map((r) => {
+      const vs = verdictsOf(r);
+      return {
+        appId: r.appId,
+        subject: strength.forPolicyOrDefault(r.appPolicyId),
+        findings: r.findings.map((f, i) => ({
+          groupId: f.groupId,
+          dominantPolicyId: f.dominantPolicyId,
+          baseline: vs[i]!.baseline,
+          grounded: vs[i]!.verdict.grounded,
+          ...(vs[i]!.verdict.grounded ? { direction: vs[i]!.verdict.direction } : {}),
+        })),
+      };
+    });
+    return JSON.stringify({ ...report, strength: { rows } }, null, 2);
+  }
 
   const lines: string[] = [];
   lines.push("Policy outliers — apps diverging from their peer set's dominant auth policy");
@@ -264,6 +388,11 @@ export function renderOutliers(report: OutlierReport, format: OutputFormat): str
     `(peer set = apps granted to the same group; dominant = a unique policy covering >=2/3 of >=${report.minPeers} peers)`,
   );
   lines.push("");
+
+  // Track whether ANY finding got a grounded verdict and whether ANY stayed a prior, so the
+  // trailing caveat is honest about which regime is in play (Phase E stale-docs rule).
+  let grounded = 0;
+  let ungrounded = 0;
 
   if (report.rows.length === 0) {
     lines.push("  (no outliers)");
@@ -282,11 +411,21 @@ export function renderOutliers(report: OutlierReport, format: OutputFormat): str
           `${r.findingCount}`.padStart(6) + "  " +
           `${r.score}`,
       );
-      for (const f of r.findings) {
+      // The subject (outlier app's own gate) is constant across findings; the baseline is each peer
+      // set's dominant policy. The shared helper resolved both (org default via the resolver).
+      const vs = verdictsOf(r);
+      r.findings.forEach((f, i2) => {
         lines.push(
           `         - in ${f.groupName} (${f.peerCount} apps): ${f.dominantCount}/${f.peerCount} peers behind ${f.dominantPolicyName}`,
         );
-      }
+        const line = vs[i2]?.line ?? null;
+        if (line) {
+          grounded++;
+          lines.push(`           ↳ ${line}`);
+        } else if (strength) {
+          ungrounded++;
+        }
+      });
       if (r.findingCount > r.findings.length) {
         lines.push(`         …and ${r.findingCount - r.findings.length} more peer group(s)`);
       }
@@ -300,8 +439,33 @@ export function renderOutliers(report: OutlierReport, format: OutputFormat): str
   lines.push(
     "Note: divergence compares WHICH policy applies, not policy contents — custom-vs-custom",
   );
-  lines.push("mismatches may be intentional. Policy rule strength is not evaluated.");
-  lines.push(GATE_PRIOR_CAVEAT);
+  lines.push("mismatches may be intentional.");
+  // Strength note adapts to what actually happened. The ↳ verdicts DO read the captured rules, so
+  // the old blanket "rule strength is not evaluated" would now be a lie (Phase E) where any grounded.
+  if (grounded > 0) {
+    lines.push(
+      "The ↳ lines DO read policy contents (M15): each side's weakest-way-in band, deciding rule",
+    );
+    lines.push("named. A scoped bypass floors the POLICY, not necessarily every app/user (see scope).");
+    if (ungrounded > 0) {
+      lines.push(
+        "Findings with no ↳ have an unknown band (e.g. an org-default app on the tfstate path — its",
+      );
+      lines.push("rules aren't in state); those stay a divergence prior, not a proven weakness.");
+    }
+  } else if (strength && ungrounded > 0) {
+    // Strength WAS read, but every shown divergence has an unknown band (e.g. an org-default app on
+    // the tfstate path — the system policy's rules aren't in state). No grounded verdict is possible.
+    lines.push(
+      "No grounded verdict: every divergence shown has an unknown band (e.g. an org-default app on",
+    );
+    lines.push("the tfstate path — the system policy's rules aren't captured), so it stays a prior:");
+    lines.push(GATE_PRIOR_CAVEAT);
+  } else {
+    // No strength supplied (or no findings) — the M13 prior stands verbatim.
+    lines.push("Policy rule strength is not evaluated here.");
+    lines.push(GATE_PRIOR_CAVEAT);
+  }
   return lines.join("\n");
 }
 

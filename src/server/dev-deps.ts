@@ -10,6 +10,7 @@
 import { loadDotEnv, loadLiveResources, loadUserMembership } from "../inputs/load-resources.js";
 import { readOktaConfigFromEnv } from "../inputs/okta-api.js";
 import { buildGraph } from "../core/build-graph.js";
+import { appAuthPolicyRules } from "../analysis/policy-strength.js";
 import { makeEnvelope } from "../render/envelope.js";
 import type { ApiDeps } from "./api.js";
 
@@ -28,7 +29,16 @@ export function buildApiDeps(): ApiDeps {
   return {
     live,
     loadMembership: (login) => loadUserMembership(login),
-    loadEnvelope: async () =>
-      makeEnvelope(buildGraph(await loadLiveResources()), "okta", new Date().toISOString()),
+    loadEnvelope: async () => {
+      // Carry the captured policy rules (M15 Phase D) so the live-pulled graph bands policies too.
+      const live = await loadLiveResources();
+      return makeEnvelope(
+        buildGraph(live),
+        "okta",
+        new Date().toISOString(),
+        undefined,
+        appAuthPolicyRules(live),
+      );
+    },
   };
 }

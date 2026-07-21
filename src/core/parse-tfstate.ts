@@ -118,6 +118,15 @@ export type ParsedResource =
       status?: string;
       /** true = Okta's built-in catch-all rule. Live-only (the catch-all is unmanaged, absent from tfstate). */
       system?: boolean;
+      /**
+       * true = this rule's POLICY is the org-default (`system: true`) app-auth policy — the one apps
+       * fall back to when they carry no custom `protects` edge (`authenticationPolicyId: null`). The
+       * org-default policy is never a graph node, so this per-rule flag is the ONLY channel that lets
+       * Phase C resolve a null-policy app to its band (`orgDefaultPolicyId` in policy-strength).
+       * Live-only: tfstate has no system policy, so a null-policy app stays `unknown` there (the
+       * documented Phase 0 divergence). Distinct from `system` above, which flags the catch-all RULE.
+       */
+      policySystem?: boolean;
       /** `ALLOW` | `DENY`. DENY is recorded as evidence but does NOT set the weakest-ALLOW floor (Phase 0 D1). */
       access: string;
       /** `1FA` | `2FA` | `2FA_If_Possible` | … Kept LITERAL; the strength model classifies, never guesses. */
@@ -160,6 +169,13 @@ export type ParsedResource =
    * attribute. Confirmed present in okta/okta v4.20.0 (M11 Phase A).
    */
   | { kind: "AppAccessPolicyAssignment"; address: string; appId: string; policyId: string };
+
+/**
+ * The `AppAuthPolicyRule` variant, named for the modules that consume rules directly (the strength
+ * model; the envelope's `policyRules` carrier — M15 Phase D). Rules are policy-internal, never a
+ * graph node, so they travel as this `ParsedResource` subset rather than inside `OktaGraph`.
+ */
+export type AppAuthPolicyRule = Extract<ParsedResource, { kind: "AppAuthPolicyRule" }>;
 
 /** Minimal, defensive view of the tfstate shapes we touch. */
 interface RawResource {

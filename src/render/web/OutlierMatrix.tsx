@@ -6,6 +6,7 @@
  * into its apps via the shared CohortList.
  */
 import type { MatrixCell, OutlierMatrix as MatrixModel } from "./outlier-matrix.js";
+import { outlierStrengthNote, type VerdictRegime } from "./strength-notes.js";
 
 /** Heat as an rgba fill: base blue for conforming, amber/slate for the flagged divergence. */
 function cellStyle(cell: MatrixCell): React.CSSProperties {
@@ -22,9 +23,12 @@ function cellStyle(cell: MatrixCell): React.CSSProperties {
 
 export function OutlierMatrix({
   matrix,
+  regime,
   onOpenCell,
 }: {
   matrix: MatrixModel;
+  /** M15 Phase D strength regime — drives the strength caveat (grounded vs prior). */
+  regime: VerdictRegime;
   onOpenCell: (label: string, appIds: string[]) => void;
 }) {
   return (
@@ -81,8 +85,8 @@ export function OutlierMatrix({
         {matrix.hiddenRowCount > 0 && ` · ${matrix.hiddenRowCount} more group(s) not shown (largest audiences first).`}
       </p>
       <p className="hint outlier-note">
-        Gate strength is a heuristic prior (org-default vs custom policy), not a factor-based verdict
-        (M15) — a divergence, not a proven weakness.
+        Cells show <strong>which</strong> policy applies; see the table for each divergence's
+        grounded strength verdict. {outlierStrengthNote(regime)}
       </p>
     </div>
   );

@@ -14,6 +14,7 @@ import { computeCoverage, countIndividualAssignments, slimCoverage } from "./ana
 import { generateImportBlocks } from "./analysis/import-blocks.js";
 import { rankRisk } from "./analysis/rank-risk.js";
 import { findPolicyOutliers } from "./analysis/policy-outliers.js";
+import { appAuthPolicyRules, strengthResolver } from "./analysis/policy-strength.js";
 import {
   loadDotEnv,
   loadLiveResources,
@@ -51,8 +52,11 @@ async function loadSourceResources(opts: SourceOpts) {
   return loadStateResources(opts.state);
 }
 
-async function loadGraph(opts: SourceOpts) {
-  return buildGraph(await loadSourceResources(opts));
+/** Load a source once and derive BOTH the graph and the rule-strength resolver (Phase C surfaces
+ * need the resolver to band org-default apps, which the graph alone can't — rules aren't nodes). */
+async function loadGraphAndStrength(opts: SourceOpts) {
+  const resources = await loadSourceResources(opts);
+  return { graph: buildGraph(resources), strength: strengthResolver(resources) };
 }
 
 const sourceOption = () =>
@@ -112,7 +116,7 @@ program
           if (opts.source !== "okta") {
             throw new Error("trace --user requires --source okta (Terraform state has no users).");
           }
-          const graph = await loadGraph(opts);
+          const { graph, strength } = await loadGraphAndStrength(opts);
           // One reader for the whole user trace: membership + the per-app individual-assignment
           // scope check. Both are per-user, read-only GETs — the PII rail holds (no bulk sweep, no
           // node).
@@ -122,8 +126,8 @@ program
           const result = traceUser(graph, membership, { directApps });
           console.log(
             opts.app != null
-              ? renderUserAppExplain(explainUserApp(graph, result, opts.app), format)
-              : renderUserTrace(result, format),
+              ? renderUserAppExplain(explainUserApp(graph, result, opts.app), format, strength)
+              : renderUserTrace(result, format, strength),
           );
           return;
         }
@@ -133,11 +137,11 @@ program
             "trace requires exactly one of --group <nameOrId>, --app <nameOrId>, or --user <email>.",
           );
         }
-        const graph = await loadGraph(opts);
+        const { graph, strength } = await loadGraphAndStrength(opts);
         console.log(
           opts.app != null
-            ? renderAppTrace(traceApp(graph, opts.app), format)
-            : renderTrace(trace(graph, opts.group as string), format),
+            ? renderAppTrace(traceApp(graph, opts.app), format, strength)
+            : renderTrace(trace(graph, opts.group as string), format, strength),
         );
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err));
@@ -169,13 +173,13 @@ program
         const state = await loadStateResources(opts.state);
         const live = await loadLiveResources();
         const coverage = computeCoverage(live, state);
-        console.log(renderRisk(rankRisk(buildGraph(live), coverage), format));
+        console.log(renderRisk(rankRisk(buildGraph(live), coverage), format, strengthResolver(live)));
         return;
       }
 
       // Reach + gate only (single source); IaC shown as n/a.
-      const graph = await loadGraph(opts);
-      console.log(renderRisk(rankRisk(graph), format));
+      const { graph, strength } = await loadGraphAndStrength(opts);
+      console.log(renderRisk(rankRisk(graph), format, strength));
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -192,9 +196,9 @@ program
   .option("--json", "output the full report as JSON (rows + evaluation stats)")
   .action(async (opts: SourceOpts & { json?: boolean }) => {
     try {
-      const graph = await loadGraph(opts);
+      const { graph, strength } = await loadGraphAndStrength(opts);
       const format: OutputFormat = opts.json ? "json" : "text";
-      console.log(renderOutliers(findPolicyOutliers(graph), format));
+      console.log(renderOutliers(findPolicyOutliers(graph), format, strength));
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -226,12 +230,14 @@ program
         console.error(`Wrote ${report.overall.unmanaged} import block(s) to ${opts.imports}`);
       }
       if (opts.viz) {
-        // Embed the live graph (already fetched — no extra API calls) plus the slimmed overlay.
+        // Embed the live graph (already fetched — no extra API calls), the slimmed overlay, and the
+        // captured policy rules so the viewer can band policies (M15 Phase D).
         const envelope = makeEnvelope(
           buildGraph(live),
           "okta",
           new Date().toISOString(),
           slimCoverage(report),
+          appAuthPolicyRules(live),
         );
         await writeFile(opts.viz, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
         console.error(`Wrote coverage viz (${report.items.length} classified) to ${opts.viz}`);
@@ -250,8 +256,17 @@ program
   .option("-o, --output <path>", "where to write the graph envelope", "generated/graph.json")
   .action(async (opts: SourceOpts & { output: string }) => {
     try {
-      const graph = await loadGraph(opts);
-      const envelope = makeEnvelope(graph, opts.source, new Date().toISOString());
+      const resources = await loadSourceResources(opts);
+      const graph = buildGraph(resources);
+      // Carry the captured app-auth policy rules (M15 Phase D) so the viewer bands policies + emits
+      // grounded strength verdicts. Additive-optional: absent on a rule-less tenant, ignored by old viewers.
+      const envelope = makeEnvelope(
+        graph,
+        opts.source,
+        new Date().toISOString(),
+        undefined,
+        appAuthPolicyRules(resources),
+      );
       await writeFile(opts.output, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
       console.error(
         `Wrote ${graph.nodes.length} nodes / ${graph.edges.length} edges to ${opts.output}`,
