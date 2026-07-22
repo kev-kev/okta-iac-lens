@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import type { GraphNode, NodeKind, OktaGraph } from "../../core/model.js";
 import type { CoverageBucket, SlimCoverageReport } from "../../analysis/coverage.js";
 import { rankRisk, type RiskRow } from "../../analysis/rank-risk.js";
+import type { StrengthResolver } from "../../analysis/policy-strength.js";
 import type { GraphIndexes } from "./indexes.js";
 import { CoveragePanel } from "./CoveragePanel.js";
 import { VirtualList } from "./VirtualList.js";
@@ -28,11 +29,14 @@ export function Explorer({
   graph,
   indexes,
   coverage,
+  strength,
   onFocus,
 }: {
   graph: OktaGraph;
   indexes: GraphIndexes;
   coverage: SlimCoverageReport | null;
+  /** M16: captured-rule strength resolver, or null (pre-M15 export) → App gates score by the prior. */
+  strength: StrengthResolver | null;
   onFocus: (nodeId: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -48,8 +52,9 @@ export function Explorer({
   }, [coverage]);
 
   // Risk ranking (apps + groups). `orderById` gives the rank position; `byId` the signals per row.
+  // M16: pass the strength resolver so App gates score by their captured band (null ⇒ prior fallback).
   const risk = useMemo(() => {
-    const ranked = rankRisk(graph, coverage ?? undefined);
+    const ranked = rankRisk(graph, coverage ?? undefined, strength ?? undefined);
     const byId = new Map<string, RiskRow>();
     const orderById = new Map<string, number>();
     ranked.forEach((r, i) => {
@@ -57,7 +62,7 @@ export function Explorer({
       orderById.set(r.id, i);
     });
     return { byId, orderById };
-  }, [graph, coverage]);
+  }, [graph, coverage, strength]);
 
   const counts = useMemo(() => {
     const c = new Map<NodeKind, number>();

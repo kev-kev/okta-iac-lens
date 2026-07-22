@@ -153,7 +153,7 @@ program
 program
   .command("risk")
   .description(
-    "Rank apps and groups by composite risk: reach × gate prior (org-default vs custom) × IaC status (widest reach, default-gated, not-in-Terraform first).",
+    "Rank apps and groups by composite risk: reach × gate strength (App gates by captured policy band, groups by session prior) × IaC status (widest reach, weakest gate, not-in-Terraform first).",
   )
   .addOption(sourceOption())
   .option("--state <path>", "path to `terraform show -json` output (tfstate source, or the baseline for --iac)")
@@ -173,13 +173,14 @@ program
         const state = await loadStateResources(opts.state);
         const live = await loadLiveResources();
         const coverage = computeCoverage(live, state);
-        console.log(renderRisk(rankRisk(buildGraph(live), coverage), format, strengthResolver(live)));
+        const strength = strengthResolver(live);
+        console.log(renderRisk(rankRisk(buildGraph(live), coverage, strength), format, strength));
         return;
       }
 
       // Reach + gate only (single source); IaC shown as n/a.
       const { graph, strength } = await loadGraphAndStrength(opts);
-      console.log(renderRisk(rankRisk(graph), format, strength));
+      console.log(renderRisk(rankRisk(graph, undefined, strength), format, strength));
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

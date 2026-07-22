@@ -8,24 +8,41 @@
  *
  * The three signals — each surfaced on the row so the ranking is legible, not a black box:
  *  1. REACH — apps a group grants / groups that grant an app (blast radius).
- *  2. GATE PRIOR — org-default app policy / no session policy = `default`; a custom policy =
- *     `custom`. This is a documented PRIOR, not a proven ordering: org-default is more-often-than-
- *     not the looser gate, so it scores as higher-risk — but the model carries no rule/factor data
- *     (M15), so this flags a divergence, NOT a proven weakness. ("org default" is NOT
- *     "unprotected" — it's the org-wide default app sign-on policy.)
+ *  2. GATE STRENGTH — an App's gate weight is derived from its policy's captured strength BAND when
+ *     a `strength` resolver is supplied (weaker band ⇒ higher risk; `unknown` scores neutral) — M16
+ *     band-aware scoring. WITHOUT a resolver (an old envelope, or a caller that captured no rules)
+ *     it falls back to the M8 PRIOR: org-default / no session policy = `default` (2×, the looser gate
+ *     more-often-than-not), a custom policy = `custom` (1×). GROUP rows ALWAYS use the prior —
+ *     session-policy rule strength is not captured (M15 D2). ("org default" is NOT "unprotected" —
+ *     it's the org-wide default app sign-on policy.)
  *  3. IaC STATUS — managed vs not-in-Terraform, from coverage. Optional: coverage is a two-input
  *     reconciliation (live vs state), so when it's absent the IaC weight is neutralized.
  */
 
 import type { OktaGraph } from "../core/model.js";
 import type { CoverageBucket, SlimCoverageReport } from "./coverage.js";
+import type { StrengthBand, StrengthResolver } from "./policy-strength.js";
 
-/** Score weights. Multiplicative so "wide AND default-gated AND unmanaged" compounds. The gate
- * multiplier encodes a PRIOR (org-default is the looser gate more often than not), not proof —
- * M15's factor bands replace it with evidence. Pinned at the M8 Phase-A checkpoint against the
- * fixture oracle. */
+/** Score weights. Multiplicative so "wide AND weak-gated AND unmanaged" compounds. Pinned against
+ * the fixture oracle. `DEFAULT_GATE_MULT` is the FALLBACK gate weight used when no strength resolver
+ * is supplied (the M8 org-default prior); with a resolver, App gates weigh by `BAND_GATE_MULT`. */
 const DEFAULT_GATE_MULT = 2;
 const UNMANAGED_MULT = 2;
+
+/**
+ * Band → App-gate multiplier (M16 band-aware scoring). Weaker band ⇒ higher risk. The ORDERING is
+ * the locked invariant (property-tested); the exact constants are tuned to the oracle and
+ * revisitable. `unknown` is NEUTRAL — it sits at the `two-factor` baseline (no captured rules, no
+ * evidence either way), so an unread gate neither amplifies nor dampens. Integer scale (2× the old
+ * prior) keeps scores whole and the weak/neutral endpoints continuous with `DEFAULT_GATE_MULT`.
+ */
+const BAND_GATE_MULT: Record<StrengthBand, number> = {
+  "single-factor": 4, //          weakest documented way in ⇒ highest gate risk
+  "two-factor": 2, //             the common 2FA baseline ⇒ neutral
+  "phishing-resistant-2fa": 1, // strongest realistic gate ⇒ dampens exposure below baseline
+  "deny-all": 0, //               nobody gets in ⇒ zero gate exposure (sorts the app to the floor)
+  unknown: 2, //                  NEUTRAL — no captured rules; equals the two-factor baseline
+};
 
 export type GateLabel = "org-default" | "custom" | "none" | "session-policy";
 
@@ -37,8 +54,9 @@ export interface RiskRow {
   reach: number;
   /** Signal 2: the specific gate (factual label). */
   gate: GateLabel;
-  /** Whether the gate is the org default (`default`) or a custom policy (`custom`). A scoring
-   * PRIOR — org-default is more-often-than-not the looser gate — not a proven weak/strong ordering. */
+  /** Whether the gate is the org default (`default`) or a custom policy (`custom`). A FACTUAL label;
+   * it drives the fallback gate weight only when no strength resolver is supplied (with one, App
+   * gates weigh by their captured band — M16). Still the sole gate weight for GROUP rows (D2). */
   gatePrior: "default" | "custom";
   /**
    * The id of the App's gating auth policy (a custom `protects` edge), or `null` for the org
@@ -62,10 +80,14 @@ function bucketByNodeId(coverage?: SlimCoverageReport): Map<string, CoverageBuck
   return m;
 }
 
-function score(reach: number, gatePrior: "default" | "custom", iac: CoverageBucket | "unknown"): number {
-  const gateMult = gatePrior === "default" ? DEFAULT_GATE_MULT : 1;
+function score(reach: number, gateMult: number, iac: CoverageBucket | "unknown"): number {
   const iacMult = iac === "unmanaged" ? UNMANAGED_MULT : 1;
   return reach * gateMult * iacMult;
+}
+
+/** The fallback gate weight (no strength resolver): the M8 org-default(2×)/custom(1×) prior. */
+function priorGateMult(gatePrior: "default" | "custom"): number {
+  return gatePrior === "default" ? DEFAULT_GATE_MULT : 1;
 }
 
 /**
@@ -81,12 +103,17 @@ function addToSet(map: Map<string, Set<string>>, key: string, value: string): vo
 /**
  * Rank every App and Group by composite risk, highest first. `coverage` is optional — without it
  * every row's `iac` is "unknown" and the IaC weight is neutral (ranking = reach × gate only).
- * Ties break by reach desc, then name asc, for deterministic output.
+ * `strength` is optional too — supplied, an App's gate weighs by its captured band (M16); absent,
+ * every gate falls back to the M8 org-default/custom prior. Ties break by reach desc, then name asc.
  *
  * O(nodes + edges): all three signals are precomputed in single passes, then rows are assembled in
- * one pass — never the per-subject traversal-in-a-loop that would be O(nodes × edges) at scale.
+ * one pass (the strength lookup is an O(1) map read) — never a per-subject traversal-in-a-loop.
  */
-export function rankRisk(graph: OktaGraph, coverage?: SlimCoverageReport): RiskRow[] {
+export function rankRisk(
+  graph: OktaGraph,
+  coverage?: SlimCoverageReport,
+  strength?: StrengthResolver,
+): RiskRow[] {
   const buckets = bucketByNodeId(coverage);
 
   // Reach — deduped `grants` degree in one pass: apps a group grants, groups that grant an app.
@@ -124,14 +151,19 @@ export function rankRisk(graph: OktaGraph, coverage?: SlimCoverageReport): RiskR
       const gate: GateLabel = custom ? "custom" : "org-default";
       const gatePrior = custom ? "custom" : "default";
       const iac = buckets.get(node.id) ?? "unknown";
-      rows.push({ id: node.id, kind: "App", name: node.name, reach, gate, gatePrior, gatePolicyId, iac, score: score(reach, gatePrior, iac) });
+      // M16: weigh the gate by its captured band when a resolver is supplied; else the M8 prior.
+      const gateMult = strength
+        ? BAND_GATE_MULT[strength.forPolicyOrDefault(gatePolicyId).band]
+        : priorGateMult(gatePrior);
+      rows.push({ id: node.id, kind: "App", name: node.name, reach, gate, gatePrior, gatePolicyId, iac, score: score(reach, gateMult, iac) });
     } else if (node.kind === "Group") {
       const reach = appsByGroup.get(node.id)?.size ?? 0;
       const hasSession = groupsWithSession.has(node.id);
       const gate: GateLabel = hasSession ? "session-policy" : "none";
       const gatePrior = hasSession ? "custom" : "default";
       const iac = buckets.get(node.id) ?? "unknown";
-      rows.push({ id: node.id, kind: "Group", name: node.name, reach, gate, gatePrior, iac, score: score(reach, gatePrior, iac) });
+      // GROUP gates keep the M8 session prior — session-policy rule strength is not captured (D2).
+      rows.push({ id: node.id, kind: "Group", name: node.name, reach, gate, gatePrior, iac, score: score(reach, priorGateMult(gatePrior), iac) });
     }
   }
 

@@ -278,14 +278,14 @@ const BAND_ABBREV: Record<string, string> = {
 export function renderRisk(
   rows: RiskRow[],
   format: OutputFormat,
-  /** Rule-derived strength (M15 Phase C). When supplied, App rows show their gate's captured band
-   * in the `band` column; the SCORE still uses the prior (a known gap — see the note). */
+  /** Rule-derived strength for the `band` column (M15). Display only here — the SCORE is computed in
+   * `rankRisk`, which the caller passes the SAME resolver so the band column and score agree (M16). */
   strength?: StrengthResolver,
 ): string {
   if (format === "json") {
     // Structured band (M15 Phase D): attach each App row's captured gate band, so a JSON consumer
-    // sees the same evidence the text `band` column shows. The SCORE is unchanged (still the prior
-    // — the armed red). Group rows carry no band (session-gate strength is M15-deferred, D2).
+    // sees the same evidence the text `band` column shows AND the input the M16 score weighs on.
+    // Group rows carry no band (session-gate strength is deferred, D2).
     if (!strength) return JSON.stringify(rows, null, 2);
     const enriched = rows.map((r) => {
       if (r.kind !== "App") return r;
@@ -302,7 +302,7 @@ export function renderRisk(
       : "—";
 
   const lines: string[] = [];
-  lines.push("Risk-ranked resources — widest reach × default-gate prior × not-in-Terraform first");
+  lines.push("Risk-ranked resources — widest reach × weakest gate × not-in-Terraform first");
   lines.push("");
 
   lines.push("  " + "#".padStart(3) + "  " + "resource".padEnd(24) + "kind".padEnd(7) + "reach".padStart(6) + "  " + "gate".padEnd(25) + "band".padEnd(8) + "iac".padEnd(11) + "score");
@@ -323,16 +323,14 @@ export function renderRisk(
   });
   lines.push("");
   if (strength) {
-    // The band column is factor evidence, so the old "not a factor-based verdict" caveat would be
-    // stale (Phase E). Rephrase: the SCORE is still the prior (red armed), the band is the evidence.
+    // M16: the SCORE now weighs each App gate by its captured band (weaker ⇒ higher risk) — the band
+    // column IS that scoring input, so the two can't disagree. Gates with no readable rules (band
+    // 'unk') score neutral; GROUP session gates still weigh by the prior (rule strength uncaptured, D2).
     lines.push(
-      "Note: the band column is captured-rule evidence (M15) — the gate's weakest way in. The SCORE",
+      "Note: App gate weight is the captured band (M15 rules) — weaker band ⇒ higher risk. Gates with",
     );
     lines.push(
-      "still ranks by the org-default-vs-custom prior, NOT the band: where a custom gate bands weaker",
-    );
-    lines.push(
-      "than an org-default app yet scores lower-risk, trust the band (band-aware scoring is future work).",
+      "no readable rules (band 'unk') score neutral; Group session gates still use the prior (D2).",
     );
   } else {
     lines.push(GATE_PRIOR_CAVEAT);

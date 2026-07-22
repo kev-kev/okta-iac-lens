@@ -484,7 +484,7 @@ export function App() {
               </button>
               <span className="meta">Browse all resources</span>
             </div>
-            <Explorer graph={graph} indexes={indexes} coverage={coverage} onFocus={setFocusId} />
+            <Explorer graph={graph} indexes={indexes} coverage={coverage} strength={strength} onFocus={setFocusId} />
           </div>
         ) : cohortModel ? (
           <div className="explorer">
