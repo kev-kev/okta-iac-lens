@@ -23,6 +23,10 @@ import { trace, traceApp, traceUser, summarize } from "../src/core/access-paths.
 import { resolveUserDirectAppsFromState } from "../src/inputs/load-resources.js";
 import { computeCoverage } from "../src/analysis/coverage.js";
 import { generateImportBlocks } from "../src/analysis/import-blocks.js";
+import { findPolicyOutliers } from "../src/analysis/policy-outliers.js";
+import { rankRisk } from "../src/analysis/rank-risk.js";
+import { strengthResolver } from "../src/analysis/policy-strength.js";
+import { renderOutliers, renderRisk, renderTrace } from "../src/render/cli.js";
 import {
   realStateGraph,
   realStateResources,
@@ -165,4 +169,77 @@ describe("M11 Phase D — predictions that did NOT reproduce (closed; see PLAN P
   // the state was re-exported after the click-ops add — it moved out of this "did NOT reproduce"
   // block and greened M14 red #8 above (managed + viaPluralResource, no import block). Its former
   // committed-fixtures assertion (Confluence/Contractors `unmanaged`) is superseded by absorption.
+});
+
+describe("M15 Phase C — grounded verdicts delivered (the Phase 0 KICKER, on real surfaces)", () => {
+  it("outliers: the org-default outlier now carries a GROUNDED verdict that INVERTS the prior (live)", () => {
+    const text = renderOutliers(
+      findPolicyOutliers(realLiveGraph()),
+      "text",
+      strengthResolver(realLiveResources()),
+    );
+    // GitHub is flagged default-while-peers-custom (prior: org-default is the looser gate). But the
+    // ↳ verdict, read from captured rules, says its org-default gate ('Any two factors', two-factor)
+    // is STRONGER than the peer-dominant Strict-Auth (single-factor, a 1FA Contractors bypass).
+    expect(text).toContain("↳ stronger: org default");
+    expect(text).toContain("baseline Strict-Auth admits single-factor (1FA)");
+    expect(text).toContain("Contractors-Password-Bypass");
+    // Honest scope: the 1FA floor rule is Contractors-scoped — a policy property, not proof every
+    // app/user reaches the app at 1FA (Phase 0). The verdict says so instead of over-claiming.
+    expect(text).toContain("scoped to 1 group");
+  });
+
+  it("outliers: the SAME divergence stays a prior on the tfstate path (org-default band unknown there)", () => {
+    // The system org-default's rules are unmanaged (absent from state), so GitHub's band is unknown
+    // on tfstate — no grounded verdict is possible and the M13 prior wording is kept VERBATIM.
+    const text = renderOutliers(
+      findPolicyOutliers(realStateGraph()),
+      "text",
+      strengthResolver(realStateResources()),
+    );
+    expect(text).not.toContain("↳");
+    expect(text).toContain("gate strength is a heuristic prior");
+  });
+
+  it("risk: the band column exposes the kicker — an org-default 2FA gate outscores a 1FA custom gate", () => {
+    const text = renderRisk(rankRisk(realLiveGraph()), "text", strengthResolver(realLiveResources()));
+    const line = (name: string) => text.split("\n").find((l) => l.includes(name))!;
+    expect(line("GitHub")).toContain("2FA"); // org-default gate bands two-factor
+    expect(line("Confluence")).toContain("1FA"); // Strict-Auth gate bands single-factor
+    expect(text).toContain("band-aware scoring is future work"); // the honest caveat (score red armed)
+  });
+
+  it("trace: app auth policy lines carry the captured floor + deciding rule (live)", () => {
+    const text = renderTrace(
+      trace(realLiveGraph(), "Engineering"),
+      "text",
+      strengthResolver(realLiveResources()),
+    );
+    expect(text).toContain("floor: admits single-factor (1FA) [rule 'Contractors-Password-Bypass'");
+    expect(text).toContain("floor: requires two-factor (2FA) [rule 'Catch-all Rule']");
+  });
+});
+
+describe("M15 Phase E — deferred limitation (pinned): gate SCORING keeps the org-default prior the bands invert", () => {
+  // Was a Phase C armed `it.fails`. M15's scope (stated three times in PLAN.md) surfaces the captured
+  // band as EVIDENCE + a caveat but deliberately does NOT re-weight the risk score — re-scoring from
+  // bands is the M16 "band-aware risk scoring" roadmap item. So this fits NEITHER doctrine shape
+  // above: the bug reproduces (unlike a documenting test), but the fix is out of THIS milestone's
+  // scope (unlike an `it.fails` a same-milestone fix will green). It is a characterization pin of
+  // today's prior-based ranking, kept green so M15 closes at 0 expected-fail. The honest band +
+  // "band-aware scoring is future work" caveat that keep the risk surface non-misleading are asserted
+  // by the sibling "risk: the band column exposes the kicker" test above.
+  it("today: rankRisk scores a STRONGER-gated org-default app above a weaker-floored custom peer (prior, not band)", () => {
+    // Kicker (live, capture-verified): GitHub's org default 'Any two factors' floors two-factor;
+    // Confluence's Strict-Auth floors single-factor (its 1FA Contractors bypass). Equal reach (2)
+    // and no coverage, so the score gap is PURELY the gate multiplier. Ground truth (the M16 target):
+    // the weaker-floored gate (Confluence, 1FA) is the higher risk. But rankRisk still weights
+    // org-default 2x (the M8 prior), so GitHub OUTSCORES Confluence. When M16 scores from bands this
+    // pin FLIPS red — update it then to assert the ground-truth ordering (conf.score >= gh.score).
+    const rows = rankRisk(realLiveGraph());
+    const gh = rows.find((r) => r.name === "GitHub")!;
+    const conf = rows.find((r) => r.name === "Confluence")!;
+    expect(gh.reach).toBe(conf.reach); // isolate the gate: equal reach
+    expect(gh.score).toBeGreaterThan(conf.score); // prior mis-ranks TODAY: 4 > 2 (M16 band-aware flips this)
+  });
 });

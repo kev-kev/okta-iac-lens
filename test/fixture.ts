@@ -13,6 +13,7 @@ import type {
   RawGroup,
   RawGroupRule,
   RawPolicy,
+  RawPolicyRule,
 } from "../src/inputs/okta-api.js";
 
 const FIXTURE_URL = new URL("../fixtures/sample-tenant.tfstate.json", import.meta.url);
@@ -50,6 +51,8 @@ export function loadApiSnapshot(): OktaApiSnapshot {
     globalSessionPolicies: readApiFixture<RawPolicy[]>("policies-signon.json"),
     appAuthPolicies: readApiFixture<RawPolicy[]>("app-signon-policies.json"),
     appGroupAssignments: readApiFixture<Record<string, RawAppGroupAssignment[]>>("apps-groups.json"),
+    // The idealized fixtures predate M15 rules — no rule captures, so no strength records.
+    policyRules: {},
   };
 }
 
@@ -88,6 +91,7 @@ export function loadRealApiSnapshot(): OktaApiSnapshot {
     globalSessionPolicies: readRealApiFixture<RawPolicy[]>("policies-signon.json"),
     appAuthPolicies: readRealApiFixture<RawPolicy[]>("app-signon-policies.json"),
     appGroupAssignments: readRealApiFixture<Record<string, RawAppGroupAssignment[]>>("apps-groups.json"),
+    policyRules: readRealApiFixture<Record<string, RawPolicyRule[]>>("app-signon-policy-rules.json"),
   };
 }
 

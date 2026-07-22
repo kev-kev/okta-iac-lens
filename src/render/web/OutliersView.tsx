@@ -7,8 +7,10 @@
 import { useMemo, useState } from "react";
 import type { OktaGraph } from "../../core/model.js";
 import type { OutlierReport } from "../../analysis/policy-outliers.js";
+import { outlierStrengthVerdict, type StrengthResolver } from "../../analysis/policy-strength.js";
 import type { GraphIndexes } from "./indexes.js";
 import { buildOutlierMatrix } from "./outlier-matrix.js";
+import { outlierStrengthNote, verdictRegime } from "./strength-notes.js";
 import { VirtualList } from "./VirtualList.js";
 import { OutlierDetailPanel } from "./OutlierDetailPanel.js";
 import { OutlierMatrix } from "./OutlierMatrix.js";
@@ -18,12 +20,15 @@ export function OutliersView({
   report,
   graph,
   indexes,
+  strength,
   onBack,
   onOpenApp,
 }: {
   report: OutlierReport;
   graph: OktaGraph;
   indexes: GraphIndexes;
+  /** M15 Phase D: captured-rule strength resolver, or null (pre-M15 export) → verdicts stay priors. */
+  strength: StrengthResolver | null;
   onBack: () => void;
   onOpenApp: (appId: string) => void;
 }) {
@@ -34,6 +39,25 @@ export function OutliersView({
   const selected = report.rows.find((r) => r.appId === selectedAppId) ?? null;
   const matrix = useMemo(() => (mode === "matrix" ? buildOutlierMatrix(graph) : null), [mode, graph]);
   const hasEvaluated = report.groupsEvaluated > 0;
+
+  // Which strength regime is in play (M15 Phase D), computed through the SAME shared helper the CLI
+  // uses so the web caveat can't overclaim: grounded only when ≥1 shown divergence has both bands.
+  const anyGrounded = useMemo(
+    () =>
+      strength != null &&
+      report.rows.some((r) =>
+        r.findings.some(
+          (f) =>
+            outlierStrengthVerdict(
+              strength,
+              { policyId: r.appPolicyId, policyName: r.appPolicyName },
+              { policyId: f.dominantPolicyId, policyName: f.dominantPolicyName },
+            ).verdict.grounded,
+        ),
+      ),
+    [strength, report],
+  );
+  const regime = verdictRegime(strength != null, anyGrounded);
 
   // A clicked matrix cell drills into its apps, reusing the same list the cohort overview uses.
   if (drill) {
@@ -84,7 +108,11 @@ export function OutliersView({
         </div>
 
         {mode === "matrix" && matrix ? (
-          <OutlierMatrix matrix={matrix} onOpenCell={(label, appIds) => setDrill({ label, appIds })} />
+          <OutlierMatrix
+            matrix={matrix}
+            regime={regime}
+            onOpenCell={(label, appIds) => setDrill({ label, appIds })}
+          />
         ) : report.rows.length === 0 ? (
           <div className="dropzone">
             <p>No outliers.</p>
@@ -123,14 +151,19 @@ export function OutliersView({
             />
             <p className="hint outlier-note">
               Divergence compares <strong>which</strong> policy applies, not policy contents —
-              custom-vs-custom mismatches may be intentional. Gate strength is a heuristic prior
-              (org-default vs custom policy), not a factor-based verdict (M15): this flags a
-              divergence, not a proven weakness.
+              custom-vs-custom mismatches may be intentional. {outlierStrengthNote(regime)}
             </p>
           </>
         )}
       </div>
-      {mode === "table" && selected && <OutlierDetailPanel row={selected} onOpenApp={onOpenApp} />}
+      {mode === "table" && selected && (
+        <OutlierDetailPanel
+          row={selected}
+          strength={strength}
+          regime={regime}
+          onOpenApp={onOpenApp}
+        />
+      )}
     </div>
   );
 }

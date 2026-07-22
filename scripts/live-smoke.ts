@@ -57,6 +57,9 @@ async function main(): Promise<void> {
     "policies-signon.json": snapshot.globalSessionPolicies,
     "app-signon-policies.json": snapshot.appAuthPolicies,
     "apps-groups.json": snapshot.appGroupAssignments,
+    // M15: GET /policies/{id}/rules per ACCESS_POLICY, now folded into the snapshot by
+    // readTenantSnapshot (keyed by policy id). sanitize-captures already scrubs this file.
+    "app-signon-policy-rules.json": snapshot.policyRules,
   };
   for (const [file, data] of Object.entries(captures)) {
     await writeFile(new URL(file, CAPTURE_DIR), JSON.stringify(data, null, 2));
@@ -97,6 +100,43 @@ async function main(): Promise<void> {
   console.log(`\nApp auth policies / ACCESS_POLICY (${snapshot.appAuthPolicies.length}):`);
   for (const p of snapshot.appAuthPolicies) {
     console.log(`  - ${p.id}  name=${JSON.stringify(p.name)}  system=${p.system}`);
+  }
+
+  // --- M15: app sign-on policy RULES ------------------------------------------
+  // The rules were fetched into snapshot.policyRules by readTenantSnapshot (GET /policies/{id}/rules
+  // per ACCESS_POLICY — custom Strict-Auth, the system org-default, and the built-ins). Print the
+  // strength-bearing fields so a live capture can be eyeballed against the fact table + map-api output.
+  console.log(`\nApp sign-on policy RULES (M15 — strength-bearing fields):`);
+  for (const p of snapshot.appAuthPolicies) {
+    const rules = snapshot.policyRules[p.id] ?? [];
+    console.log(`  ${JSON.stringify(p.name)} (${p.id})  system=${p.system}  — ${rules.length} rule(s):`);
+    for (const rr of rules) {
+      const asn = rr.actions?.appSignOn;
+      const vm = asn?.verificationMethod;
+      // Show which authenticator classes each constraint object carries (knowledge / possession /
+      // both) plus the phishing-resistant + hardware flags — the exact facts the band model reads.
+      const constraints = Array.isArray(vm?.constraints)
+        ? vm!.constraints
+            .map((c) => {
+              const obj = (c ?? {}) as {
+                knowledge?: unknown;
+                possession?: { phishingResistant?: string; hardwareProtection?: string };
+              };
+              const classes = Object.keys(obj).join("+") || "(empty)";
+              const poss = obj.possession;
+              const flags = poss
+                ? `{phishingResistant=${poss.phishingResistant} hardwareProtection=${poss.hardwareProtection}}`
+                : "";
+              return `${classes}${flags}`;
+            })
+            .join(" , ")
+        : "(none)";
+      console.log(
+        `    - ${JSON.stringify(rr.name)}  status=${rr.status}  priority=${rr.priority}  system=${rr.system}` +
+          `\n        access=${asn?.access}  factorMode=${vm?.factorMode}  type=${vm?.type}  reauth=${vm?.reauthenticateIn}` +
+          `\n        constraints=[ ${constraints} ]`,
+      );
+    }
   }
 
   // --- Optional read-only verification -----------------------------------------

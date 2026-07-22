@@ -95,6 +95,12 @@ export function buildGraph(resources: ParsedResource[]): OktaGraph {
         // Individual user -> app assignment. NOT modeled in the graph (a user is never a node).
         // Counted elsewhere (coverage + summary notice); nothing to add here.
         break;
+
+      case "AppAuthPolicyRule":
+        // A policy's internal rule (M15). NOT a graph node — rules are policy-internal (see
+        // model.ts NodeKind). Consumed by the pure strength model (`policy-strength.ts`, Phase B),
+        // which reads these ParsedResource records directly; nothing to add to the graph here.
+        break;
     }
   }
 

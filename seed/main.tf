@@ -18,6 +18,11 @@
 # below). Do this AFTER the export above, or re-export once more — we want a state
 # that has silently absorbed the click-ops group. See construct (4) at the bottom.
 #
+# M15 post-apply step: the app sign-on policy RULES (constructs 5a-5c) ride in the
+# `terraform show -json` export above (they're managed resources), AND are captured live
+# from GET /policies/{id}/rules by `npm run smoke` -> generated/okta-captures/. Re-run
+# BOTH after apply, then `npx tsx scripts/sanitize-captures.ts` to refresh fixtures/api-real/.
+#
 # Untested from my side (no terraform in my sandbox) — pinned to provider v4; if an
 # argument name drifts, the registry docs for your installed version win.
 
@@ -220,3 +225,83 @@ resource "okta_app_group_assignments" "confluence_groups" {
   # After apply: add a second group to Confluence via the CONSOLE (not here) — the
   # M14 drift probe. Do NOT add it as a second `group` block.
 }
+
+# =============================================================================
+# M15 additions — app sign-on policy RULES, so policy STRENGTH can be derived
+# from real rule CONTENTS (factors / DENY / re-auth), not just "which policy
+# applies." Every rule below attaches to the EXISTING Strict-Auth policy, so it
+# does NOT change which policy protects which app — the M10 outlier ground truth
+# (GitHub org-default vs Strict-Auth peers) is untouched. What they DO add:
+#   1. real strength SPREAD to classify (single-factor, 2FA, phishing-resistant 2FA, DENY);
+#   2. the honest kicker — Strict-Auth *looks* strict, but the 1FA bypass rule (5b)
+#      drops its effective floor to `single-factor` under the weakest-ALLOW-floor band
+#      model (PLAN.md M15 decision). Surfacing that is the whole point of M15.
+#
+# Provider note (okta/okta v4.20.0): `constraints` is a List of String — each element
+# is a jsonencode()'d authenticator-class object. Rule precedence is by `priority`
+# (lower = evaluated first); the system catch-all rule Okta auto-creates always sorts
+# last and is NOT managed here. Untested from my side (no terraform in my sandbox); if
+# an argument name drifts, the registry docs for your installed version win.
+#
+# Priority order below: DENY off-network (1) -> 1FA contractor bypass (2) ->
+# phishing-resistant 2FA for everyone else (3) -> [Okta system catch-all].
+# =============================================================================
+
+# (5a) STRONG rule — phishing-resistant 2FA. The broad ALLOW that most users hit.
+# Demonstrates the `phishing-resistant-2fa` band end-to-end (possession with
+# phishingResistant/hardwareProtection REQUIRED).
+resource "okta_app_signon_policy_rule" "strict_pr2fa" {
+  policy_id                   = okta_app_signon_policy.strict_auth.id
+  name                        = "Require-Phishing-Resistant"
+  access                      = "ALLOW"
+  status                      = "ACTIVE"
+  priority                    = 3
+  type                        = "ASSURANCE"
+  factor_mode                 = "2FA"
+  re_authentication_frequency = "PT12H"
+  constraints = [
+    jsonencode({
+      possession = {
+        deviceBound        = "REQUIRED"
+        hardwareProtection = "REQUIRED"
+        phishingResistant  = "REQUIRED"
+      }
+    })
+  ]
+}
+
+# (5b) WEAK rule — single-factor (password-only) bypass scoped to Contractors. This is
+# the deliberately WEAK rule the strength model must catch: it makes an ACTIVE ALLOW rule
+# that grants access with only 1FA, so the weakest-ALLOW-floor model reports Strict-Auth's
+# effective floor as `single-factor` — even though the policy is named "Strict." Scoped to
+# a group (no external zone id needed) and set ABOVE the PR-2FA rule so a contractor really
+# is evaluated against it (console-verifiable for the human acceptance check).
+resource "okta_app_signon_policy_rule" "strict_1fa_bypass" {
+  policy_id                   = okta_app_signon_policy.strict_auth.id
+  name                        = "Contractors-Password-Bypass"
+  access                      = "ALLOW"
+  status                      = "ACTIVE"
+  priority                    = 2
+  type                        = "ASSURANCE"
+  factor_mode                 = "1FA"
+  re_authentication_frequency = "PT0S"
+  groups_included             = [okta_group.contractors.id]
+  constraints = [
+    jsonencode({
+      knowledge = { types = ["password"] }
+    })
+  ]
+}
+
+# (5c) DENY rule — REMOVED 2026-07-20 (was `Block-Off-Network`). The intended
+# `network_connection = "OFF_NETWORK"` DENY rule is rejected by this tenant: the
+# OFF_NETWORK/ON_NETWORK connection types are invalid once the MULTIPLE_NETWORK_ZONES
+# feature is enabled —
+#   API: "conditions.network: You cannot use the connection type: OFF_NETWORK when the
+#         feature: MULTIPLE_NETWORK_ZONES is enabled."
+# No clean ZERO-dependency DENY has a good home here: a group-scoped DENY either blocks a
+# real group or shadows the 1FA kicker (5b); a zone-scoped DENY needs a tenant-specific zone
+# id. So the DENY -> `deny-all` band is exercised by SYNTHETIC Phase B property tests, and the
+# live fixture keeps the two ALLOW rules — ample spread (single-factor via 5b, phishing-resistant
+# -2fa via 5a, plus the system catch-all's two-factor). To add a real DENY later:
+#   network_connection = "ZONE"  +  network_includes = [<BlockedIpZone id from GET /api/v1/zones>].

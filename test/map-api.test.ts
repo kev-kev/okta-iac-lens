@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { summarize, trace } from "../src/core/access-paths.js";
 import { buildGraph } from "../src/core/build-graph.js";
 import type { GraphNode, OktaGraph } from "../src/core/model.js";
+import type { ParsedResource } from "../src/core/parse-tfstate.js";
 import { mapApiSnapshot } from "../src/inputs/map-api.js";
 import { readOktaConfigFromEnv } from "../src/inputs/okta-api.js";
 import type {
@@ -20,7 +21,20 @@ import type {
   RawGroupRule,
   RawPolicy,
 } from "../src/inputs/okta-api.js";
-import { graphFromFixture } from "./fixture.js";
+import {
+  graphFromFixture,
+  loadRealApiSnapshot,
+  realLiveResources,
+  realStateResources,
+} from "./fixture.js";
+
+type OfKind<K extends ParsedResource["kind"]> = Extract<ParsedResource, { kind: K }>;
+function byKind<K extends ParsedResource["kind"]>(
+  resources: ParsedResource[],
+  kind: K,
+): OfKind<K>[] {
+  return resources.filter((r): r is OfKind<K> => r.kind === kind);
+}
 
 const API_FIXTURE_DIR = new URL("../fixtures/api/", import.meta.url);
 
@@ -38,6 +52,7 @@ function loadApiSnapshot(): OktaApiSnapshot {
     appAuthPolicies: readApiFixture<RawPolicy[]>("app-signon-policies.json"),
     appGroupAssignments:
       readApiFixture<Record<string, RawAppGroupAssignment[]>>("apps-groups.json"),
+    policyRules: {}, // idealized fixtures predate M15 rules
   };
 }
 
@@ -105,6 +120,64 @@ describe("mapApiSnapshot -> buildGraph (M2 oracle)", () => {
     expect(graph.edges.some((e) => e.kind === "protects" && e.to === "a-gh")).toBe(false);
     // ...and the system policy itself is not modeled as managed config.
     expect(graph.nodes.some((n) => n.id === "p-default")).toBe(false);
+  });
+});
+
+describe("mapApiSnapshot — M15 app auth policy rules", () => {
+  it("normalizes live nested constraints into AppAuthPolicyRule records for a managed policy", () => {
+    const rules = byKind(realLiveResources(), "AppAuthPolicyRule");
+
+    const pr2fa = rules.find((r) => r.name === "Require-Phishing-Resistant");
+    expect(pr2fa).toMatchObject({ access: "ALLOW", factorMode: "2FA" });
+    expect(pr2fa?.constraints.some((c) => c.possession?.phishingResistant === "REQUIRED")).toBe(true);
+
+    const oneFa = rules.find((r) => r.name === "Contractors-Password-Bypass");
+    expect(oneFa).toMatchObject({ access: "ALLOW", factorMode: "1FA" });
+    expect(oneFa?.constraints.some((c) => c.knowledge?.types?.includes("password"))).toBe(true);
+  });
+
+  it("does NOT emit rules for a non-APP access policy (END_USER_ACCOUNT_MANAGEMENT)", () => {
+    const snapshot = loadRealApiSnapshot();
+    const acctMgmt = snapshot.appAuthPolicies.find(
+      (p) => p._embedded?.resourceType === "END_USER_ACCOUNT_MANAGEMENT",
+    );
+    expect(acctMgmt).toBeDefined(); // the real fixture carries one — its rules must be dropped
+
+    const emitted = byKind(mapApiSnapshot(snapshot), "AppAuthPolicyRule");
+    expect(emitted.some((r) => r.policyId === acctMgmt!.id)).toBe(false);
+    // The Identity-Engine `2FA_If_Possible` catch-all lives only in that policy — it must not leak in.
+    expect(emitted.some((r) => r.factorMode === "2FA_If_Possible")).toBe(false);
+  });
+
+  it("keeps the system org-default's rules (they source its strength band), keyed by that policy", () => {
+    const snapshot = loadRealApiSnapshot();
+    const orgDefault = snapshot.appAuthPolicies.find((p) => p.system === true);
+    expect(orgDefault).toBeDefined();
+    const emitted = byKind(mapApiSnapshot(snapshot), "AppAuthPolicyRule");
+    // The system policy is not a managed AppAuthPolicy node, but its rules ARE captured for banding.
+    expect(emitted.some((r) => r.policyId === orgDefault!.id && r.system === true)).toBe(true);
+  });
+
+  it("the managed policy's rules match across the tfstate and live paths (modulo the live-only catch-all + provenance)", () => {
+    const stripAddress = (r: OfKind<"AppAuthPolicyRule">) => {
+      const { address: _address, ...rest } = r;
+      return rest;
+    };
+    const norm = (rules: OfKind<"AppAuthPolicyRule">[]) =>
+      rules.map(stripAddress).sort((a, b) => a.id.localeCompare(b.id));
+
+    const stateRules = byKind(realStateResources(), "AppAuthPolicyRule");
+    expect(stateRules.length).toBeGreaterThan(0);
+    // The seed manages exactly one app-auth policy (Strict-Auth) — all its rules share that id.
+    const managedPolicyId = stateRules[0].policyId;
+    expect(stateRules.every((r) => r.policyId === managedPolicyId)).toBe(true);
+
+    // On the live side the same policy also returns the Okta system catch-all (unmanaged, absent
+    // from tfstate) — exclude it, then the managed rules must be byte-for-byte equal.
+    const liveManaged = byKind(realLiveResources(), "AppAuthPolicyRule").filter(
+      (r) => r.policyId === managedPolicyId && r.system !== true,
+    );
+    expect(norm(liveManaged)).toEqual(norm(stateRules));
   });
 });
 

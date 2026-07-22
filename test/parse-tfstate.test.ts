@@ -217,3 +217,119 @@ describe("parseTfState — M12 status + priority", () => {
     expect(byKind(parseTfState(state), "App")[0].status).toBeUndefined();
   });
 });
+
+// --- M15: app auth policy RULES (okta_app_signon_policy_rule) ---
+
+describe("parseTfState — M15 app auth policy rules", () => {
+  it("parses a 1FA ALLOW rule, decoding the jsonencode'd knowledge constraint", () => {
+    const state = stateOf([
+      {
+        type: "okta_app_signon_policy_rule",
+        values: {
+          id: "rul-1fa",
+          policy_id: "p-strict",
+          name: "Contractors-Password-Bypass",
+          access: "ALLOW",
+          status: "ACTIVE",
+          system: false,
+          priority: 2,
+          type: "ASSURANCE",
+          factor_mode: "1FA",
+          re_authentication_frequency: "PT0S",
+          network_connection: "ANYWHERE",
+          groups_included: ["g-con"],
+          constraints: ['{"knowledge":{"types":["password"],"required":false}}'],
+        },
+      },
+    ]);
+    expect(byKind(parseTfState(state), "AppAuthPolicyRule")).toEqual([
+      {
+        kind: "AppAuthPolicyRule",
+        id: "rul-1fa",
+        policyId: "p-strict",
+        name: "Contractors-Password-Bypass",
+        address: "okta_app_signon_policy_rule.r0",
+        priority: 2,
+        status: "ACTIVE",
+        access: "ALLOW",
+        factorMode: "1FA",
+        assuranceType: "ASSURANCE",
+        reauthenticateIn: "PT0S",
+        constraints: [{ knowledge: { required: false, types: ["password"] } }],
+        groupsIncluded: ["g-con"],
+        networkConnection: "ANYWHERE",
+      },
+    ]);
+  });
+
+  it("decodes a possession constraint (phishing-resistant / hardware-protection REQUIRED)", () => {
+    const state = stateOf([
+      {
+        type: "okta_app_signon_policy_rule",
+        values: {
+          id: "rul-pr2fa",
+          policy_id: "p-strict",
+          name: "Require-Phishing-Resistant",
+          access: "ALLOW",
+          factor_mode: "2FA",
+          constraints: [
+            '{"possession":{"required":false,"deviceBound":"REQUIRED","hardwareProtection":"REQUIRED","phishingResistant":"REQUIRED"}}',
+          ],
+        },
+      },
+    ]);
+    const [rule] = byKind(parseTfState(state), "AppAuthPolicyRule");
+    expect(rule.constraints).toEqual([
+      {
+        possession: {
+          required: false,
+          deviceBound: "REQUIRED",
+          hardwareProtection: "REQUIRED",
+          phishingResistant: "REQUIRED",
+        },
+      },
+    ]);
+  });
+
+  it("captures a DENY rule with no factor mode (factorMode stays undefined, never guessed)", () => {
+    const state = stateOf([
+      {
+        type: "okta_app_signon_policy_rule",
+        values: { id: "rul-deny", policy_id: "p-strict", name: "Block", access: "DENY" },
+      },
+    ]);
+    const [rule] = byKind(parseTfState(state), "AppAuthPolicyRule");
+    expect(rule.access).toBe("DENY");
+    expect(rule.factorMode).toBeUndefined();
+    expect(rule.constraints).toEqual([]);
+  });
+
+  it("carries INACTIVE status (the strength model excludes it — M12 rule)", () => {
+    const state = stateOf([
+      {
+        type: "okta_app_signon_policy_rule",
+        values: { id: "rul-off", policy_id: "p-strict", name: "Old", access: "ALLOW", status: "INACTIVE" },
+      },
+    ]);
+    expect(byKind(parseTfState(state), "AppAuthPolicyRule")[0].status).toBe("INACTIVE");
+  });
+
+  it("skips an unparseable constraint string rather than crashing", () => {
+    const state = stateOf([
+      {
+        type: "okta_app_signon_policy_rule",
+        values: {
+          id: "rul-bad",
+          policy_id: "p-strict",
+          name: "Weird",
+          access: "ALLOW",
+          factor_mode: "2FA",
+          constraints: ["{not valid json", '{"possession":{"phishingResistant":"REQUIRED"}}'],
+        },
+      },
+    ]);
+    const [rule] = byKind(parseTfState(state), "AppAuthPolicyRule");
+    // The malformed element is dropped; the valid one survives.
+    expect(rule.constraints).toEqual([{ possession: { phishingResistant: "REQUIRED" } }]);
+  });
+});

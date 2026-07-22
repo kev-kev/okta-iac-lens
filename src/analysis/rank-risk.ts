@@ -40,6 +40,12 @@ export interface RiskRow {
   /** Whether the gate is the org default (`default`) or a custom policy (`custom`). A scoring
    * PRIOR — org-default is more-often-than-not the looser gate — not a proven weak/strong ordering. */
   gatePrior: "default" | "custom";
+  /**
+   * The id of the App's gating auth policy (a custom `protects` edge), or `null` for the org
+   * default; `undefined` on Group rows (their gate is a session policy — M15 D2 deferred). Carried
+   * so a renderer can band the gate from captured rules (Phase C) without re-walking the graph.
+   */
+  gatePolicyId?: string | null;
   /** Signal 3: IaC coverage bucket, or "unknown" when no coverage report was supplied. */
   iac: CoverageBucket | "unknown";
   /** Composite risk score (higher = attend first). See weights above. */
@@ -101,10 +107,11 @@ export function rankRisk(graph: OktaGraph, coverage?: SlimCoverageReport): RiskR
     if (n.kind === "AppAuthPolicy") authPolicyIds.add(n.id);
     else if (n.kind === "GlobalSessionPolicy") sessionPolicyIds.add(n.id);
   }
-  const appsWithCustomPolicy = new Set<string>();
+  // app id -> its custom auth policy id (first valid `protects` wins, matching buildPeerIndex).
+  const policyByApp = new Map<string, string>();
   const groupsWithSession = new Set<string>();
   for (const e of graph.edges) {
-    if (e.kind === "protects" && authPolicyIds.has(e.from)) appsWithCustomPolicy.add(e.to);
+    if (e.kind === "protects" && authPolicyIds.has(e.from) && !policyByApp.has(e.to)) policyByApp.set(e.to, e.from);
     else if (e.kind === "appliesTo" && sessionPolicyIds.has(e.from)) groupsWithSession.add(e.to);
   }
 
@@ -112,11 +119,12 @@ export function rankRisk(graph: OktaGraph, coverage?: SlimCoverageReport): RiskR
   for (const node of graph.nodes) {
     if (node.kind === "App") {
       const reach = groupsByApp.get(node.id)?.size ?? 0;
-      const custom = appsWithCustomPolicy.has(node.id);
+      const gatePolicyId = policyByApp.get(node.id) ?? null;
+      const custom = gatePolicyId !== null;
       const gate: GateLabel = custom ? "custom" : "org-default";
       const gatePrior = custom ? "custom" : "default";
       const iac = buckets.get(node.id) ?? "unknown";
-      rows.push({ id: node.id, kind: "App", name: node.name, reach, gate, gatePrior, iac, score: score(reach, gatePrior, iac) });
+      rows.push({ id: node.id, kind: "App", name: node.name, reach, gate, gatePrior, gatePolicyId, iac, score: score(reach, gatePrior, iac) });
     } else if (node.kind === "Group") {
       const reach = appsByGroup.get(node.id)?.size ?? 0;
       const hasSession = groupsWithSession.has(node.id);

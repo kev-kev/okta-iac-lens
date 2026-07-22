@@ -77,6 +77,37 @@ export interface RawPolicy {
   _embedded?: { resourceType?: string };
 }
 
+/**
+ * One rule of an app-auth (ACCESS_POLICY) policy, from `GET /api/v1/policies/{policyId}/rules`.
+ * The strength-bearing action is `actions.appSignOn`; `verificationMethod` is absent on some rules
+ * (e.g. a pure DENY). `conditions` is `null` on the Okta system catch-all. `constraints` is left RAW
+ * (nested objects) here — the mapper normalizes each element with `toRuleConstraint`. The scope
+ * fields (`conditions.people.groups.include`, `conditions.network.connection`) feed M15 evidence.
+ */
+export interface RawPolicyRule {
+  id: string;
+  name: string;
+  status?: string;
+  priority?: number;
+  /** true = the Okta auto-created catch-all rule (always returned live, always the lowest priority). */
+  system?: boolean;
+  conditions?: {
+    people?: { groups?: { include?: string[] } };
+    network?: { connection?: string };
+  } | null;
+  actions?: {
+    appSignOn?: {
+      access?: string;
+      verificationMethod?: {
+        factorMode?: string;
+        type?: string;
+        reauthenticateIn?: string;
+        constraints?: unknown[];
+      };
+    };
+  };
+}
+
 /** One row of `GET /api/v1/apps/{appId}/groups` — the live, all-groups-for-this-app read. */
 export interface RawAppGroupAssignment {
   id: string; // group id
@@ -111,6 +142,8 @@ export interface OktaReader {
   listAppAuthPolicies(): Promise<RawPolicy[]>;
   /** `GET /api/v1/apps/{appId}/groups` — all groups currently assigned to this app. */
   listAppGroupAssignments(appId: string): Promise<RawAppGroupAssignment[]>;
+  /** `GET /api/v1/policies/{policyId}/rules` — the rules of one app-auth policy, in priority order. */
+  listPolicyRules(policyId: string): Promise<RawPolicyRule[]>;
 }
 
 /**
@@ -151,6 +184,14 @@ export interface OktaApiSnapshot {
   appAuthPolicies: RawPolicy[];
   /** Per-app group assignments, keyed by app id (`GET /api/v1/apps/{id}/groups`). */
   appGroupAssignments: Record<string, RawAppGroupAssignment[]>;
+  /**
+   * Per-policy app-auth rules, keyed by policy id (`GET /api/v1/policies/{id}/rules`). Fetched for
+   * EVERY ACCESS_POLICY (custom, system org-default, and built-in console policies) so the strength
+   * model can band each. Only APP-typed policies' rules become `AppAuthPolicyRule` records — the
+   * mapper drops the rest (e.g. END_USER_ACCOUNT_MANAGEMENT). Global-session-policy rules are out of
+   * M15 scope (Phase 0 D2, deferred).
+   */
+  policyRules: Record<string, RawPolicyRule[]>;
 }
 
 /**
@@ -171,7 +212,21 @@ export async function readTenantSnapshot(reader: OktaReader): Promise<OktaApiSna
   for (const app of apps) {
     appGroupAssignments[app.id] = await reader.listAppGroupAssignments(app.id);
   }
-  return { groups, apps, groupRules, globalSessionPolicies, appAuthPolicies, appGroupAssignments };
+  // App-auth policy rules, one GET per ACCESS_POLICY — sequential, same rate-limit posture as the
+  // per-app group reads. Fetched for every policy (incl. the system org-default); the mapper filters.
+  const policyRules: Record<string, RawPolicyRule[]> = {};
+  for (const policy of appAuthPolicies) {
+    policyRules[policy.id] = await reader.listPolicyRules(policy.id);
+  }
+  return {
+    groups,
+    apps,
+    groupRules,
+    globalSessionPolicies,
+    appAuthPolicies,
+    appGroupAssignments,
+    policyRules,
+  };
 }
 
 /** Read live-reader config from env vars. Throws with a clear, actionable message if unset. */
@@ -298,5 +353,15 @@ export class HttpOktaReader implements OktaReader, OktaUserReader {
 
   listAppGroupAssignments(appId: string): Promise<RawAppGroupAssignment[]> {
     return this.getPaginated<RawAppGroupAssignment>(`/api/v1/apps/${appId}/groups`);
+  }
+
+  /**
+   * `GET /api/v1/policies/{policyId}/rules` — the rules of one app-auth policy, in priority order.
+   * Folded into `OktaApiSnapshot.policyRules` by `readTenantSnapshot`; the mapper turns APP-typed
+   * policies' rules into `AppAuthPolicyRule` records (M15 Phase A). A plain read under
+   * `okta.policies.read` — unaffected by `smoke --verify-readonly`.
+   */
+  listPolicyRules(policyId: string): Promise<RawPolicyRule[]> {
+    return this.getPaginated<RawPolicyRule>(`/api/v1/policies/${encodeURIComponent(policyId)}/rules`);
   }
 }

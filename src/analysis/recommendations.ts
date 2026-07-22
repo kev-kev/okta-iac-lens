@@ -27,6 +27,7 @@ const KIND_NOUN: Record<ResourceKind, string> = {
   // Kept out of coverage's KIND_ORDER (never coverage items); present for Record completeness.
   AppUserAssignment: "individual app assignment",
   AppAccessPolicyAssignment: "app access-policy assignment",
+  AppAuthPolicyRule: "app auth policy rule",
 };
 
 function plural(n: number, noun: string): string {

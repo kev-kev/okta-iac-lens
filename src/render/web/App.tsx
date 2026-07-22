@@ -30,6 +30,7 @@ import { VirtualList } from "./VirtualList.js";
 import { UserTraceView } from "./UserTraceView.js";
 import { HighlightedText } from "./HighlightedText.js";
 import { findPolicyOutliers } from "../../analysis/policy-outliers.js";
+import { formatPolicyFloor, strengthResolver } from "../../analysis/policy-strength.js";
 import { OutliersView } from "./OutliersView.js";
 
 type Selection = { kind: "group"; id: string } | { kind: "policy"; id: string } | null;
@@ -163,6 +164,14 @@ export function App() {
     return m;
   }, [graph]);
 
+  // M15 Phase D: a strength resolver built from the envelope's captured rules (absent on old
+  // envelopes / the scale generator → null → every surface keeps the M13 prior). The SAME pure
+  // resolver the CLI uses, so a web verdict can never drift from the terminal one.
+  const strength = useMemo(
+    () => (envelope?.policyRules ? strengthResolver(envelope.policyRules) : null),
+    [envelope],
+  );
+
   const traceResult = useMemo<TraceResult | null>(() => {
     if (!graph || selection?.kind !== "group") return null;
     try {
@@ -186,8 +195,13 @@ export function App() {
       id: rid,
       name: nameById.get(rid) ?? rid,
     }));
-    return { name: node.name, layer, governed } as const;
-  }, [graph, cards, selection, nameById]);
+    // M15 Phase D: the captured strength floor for an APP-auth policy (band + deciding rule). Session
+    // policies carry none (session-rule strength is M15-deferred). `known` distinguishes "no rules
+    // captured" (a muted note) from "no resolver at all" (say nothing — pre-M15 envelope).
+    const s = layer === "auth" && strength ? strength.forPolicy(node.id) : null;
+    const floor = s ? formatPolicyFloor(s) : null;
+    return { name: node.name, layer, governed, floor, bandKnown: s ? s.band !== "unknown" : null } as const;
+  }, [graph, cards, selection, nameById, strength]);
 
   const highlight = useMemo(() => {
     if (!cards) return null;
@@ -375,6 +389,7 @@ export function App() {
           report={outliers}
           graph={graph}
           indexes={indexes}
+          strength={strength}
           onBack={() => setShowOutliers(false)}
           onOpenApp={openAppFromOutliers}
         />
@@ -509,6 +524,8 @@ export function App() {
               name={selectedPolicy.name}
               layer={selectedPolicy.layer}
               governed={selectedPolicy.governed}
+              floor={selectedPolicy.floor}
+              bandKnown={selectedPolicy.bandKnown}
               onClear={() => setSelection(null)}
             />
           )}

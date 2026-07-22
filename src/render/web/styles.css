@@ -418,6 +418,35 @@ body {
   line-height: 1.45;
 }
 
+/* --- M15 Phase D: captured-rule strength verdicts -------------------------- */
+/* The grounded `↳` verdict under a divergence finding — reads the policy rules, so it's set apart
+   from the (prior-only) divergence sentence above it with an accent rule. */
+.strength-verdict {
+  display: block;
+  margin-top: 3px;
+  padding-left: 8px;
+  border-left: 2px solid var(--kind-AppAuthPolicy);
+  font-size: 12px;
+  color: var(--text);
+}
+/* The policy panel's strength-floor block (band + deciding rule for a selected app-auth policy). */
+.policy-strength {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--kind-AppAuthPolicy);
+  border-radius: 6px;
+  background: rgba(220, 38, 38, 0.06);
+}
+.policy-strength h3 {
+  margin: 0 0 6px;
+}
+.strength-floor {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
 /* --- M10 stretch: Group×Policy heatmap ------------------------------------- */
 .matrix-wrap {
   overflow-x: auto;
