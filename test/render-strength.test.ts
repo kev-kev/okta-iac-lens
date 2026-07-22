@@ -42,8 +42,8 @@ describe("renderOutliers --json — structured verdicts (M15 Phase D)", () => {
 });
 
 describe("renderRisk --json — captured band per App row (M15 Phase D)", () => {
-  const rows = rankRisk(realLiveGraph());
   const strength = strengthResolver(realLiveResources());
+  const rows = rankRisk(realLiveGraph(), undefined, strength);
 
   it("stamps each App row's gate band (the kicker: org-default 2FA, custom-gated 1FA)", () => {
     const json = JSON.parse(renderRisk(rows, "json", strength));
@@ -51,8 +51,8 @@ describe("renderRisk --json — captured band per App row (M15 Phase D)", () => 
     const conf = json.find((r: { name: string }) => r.name === "Confluence");
     expect(gh.band).toBe("two-factor"); // org-default gate
     expect(conf.band).toBe("single-factor"); // Strict-Auth gate
-    // The SCORE is unchanged — still the prior (the armed red); only evidence was added.
-    expect(gh.score).toBeGreaterThan(conf.score);
+    // M16: the score weighs the band, so the 1FA custom gate outranks the 2FA org-default.
+    expect(conf.score).toBeGreaterThan(gh.score);
   });
 
   it("carries no band when no resolver is supplied", () => {

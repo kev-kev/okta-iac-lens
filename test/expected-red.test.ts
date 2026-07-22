@@ -201,12 +201,18 @@ describe("M15 Phase C — grounded verdicts delivered (the Phase 0 KICKER, on re
     expect(text).toContain("gate strength is a heuristic prior");
   });
 
-  it("risk: the band column exposes the kicker — an org-default 2FA gate outscores a 1FA custom gate", () => {
-    const text = renderRisk(rankRisk(realLiveGraph()), "text", strengthResolver(realLiveResources()));
-    const line = (name: string) => text.split("\n").find((l) => l.includes(name))!;
+  it("risk: the band column AND the score invert the prior — a 1FA custom gate outranks a 2FA org-default", () => {
+    const strength = strengthResolver(realLiveResources());
+    const text = renderRisk(rankRisk(realLiveGraph(), undefined, strength), "text", strength);
+    const lines = text.split("\n");
+    const line = (name: string) => lines.find((l) => l.includes(name))!;
     expect(line("GitHub")).toContain("2FA"); // org-default gate bands two-factor
     expect(line("Confluence")).toContain("1FA"); // Strict-Auth gate bands single-factor
-    expect(text).toContain("band-aware scoring is future work"); // the honest caveat (score red armed)
+    // M16: the score weighs the band, so the 1FA custom gate now ranks ABOVE the 2FA org-default.
+    expect(lines.findIndex((l) => l.includes("Confluence"))).toBeLessThan(
+      lines.findIndex((l) => l.includes("GitHub")),
+    );
+    expect(text).toContain("weaker band ⇒ higher risk"); // the M16 note (no more "future work")
   });
 
   it("trace: app auth policy lines carry the captured floor + deciding rule (live)", () => {
@@ -220,26 +226,21 @@ describe("M15 Phase C — grounded verdicts delivered (the Phase 0 KICKER, on re
   });
 });
 
-describe("M15 Phase E — deferred limitation (pinned): gate SCORING keeps the org-default prior the bands invert", () => {
-  // Was a Phase C armed `it.fails`. M15's scope (stated three times in PLAN.md) surfaces the captured
-  // band as EVIDENCE + a caveat but deliberately does NOT re-weight the risk score — re-scoring from
-  // bands is the M16 "band-aware risk scoring" roadmap item. So this fits NEITHER doctrine shape
-  // above: the bug reproduces (unlike a documenting test), but the fix is out of THIS milestone's
-  // scope (unlike an `it.fails` a same-milestone fix will green). It is a characterization pin of
-  // today's prior-based ranking, kept green so M15 closes at 0 expected-fail. The honest band +
-  // "band-aware scoring is future work" caveat that keep the risk surface non-misleading are asserted
-  // by the sibling "risk: the band column exposes the kicker" test above.
-  it("today: rankRisk scores a STRONGER-gated org-default app above a weaker-floored custom peer (prior, not band)", () => {
+describe("M16 — band-aware scoring corrects the ranking (was the M15 Phase E deferred limitation)", () => {
+  // The M15 gap, now CLOSED. M15 surfaced the captured band as evidence but scored the gate by the
+  // M8 org-default-vs-custom PRIOR, which the bands invert — so it kept a characterization pin GREEN
+  // asserting the WRONG ordering (GitHub > Confluence). M16 weighs the App gate by its band, so the
+  // ranking now agrees with the evidence; this test asserts the corrected ground truth. Regression
+  // lock against re-introducing the prior into scoring.
+  it("scores a weaker-floored custom gate ABOVE a stronger-floored org-default peer (band, not prior)", () => {
     // Kicker (live, capture-verified): GitHub's org default 'Any two factors' floors two-factor;
-    // Confluence's Strict-Auth floors single-factor (its 1FA Contractors bypass). Equal reach (2)
-    // and no coverage, so the score gap is PURELY the gate multiplier. Ground truth (the M16 target):
-    // the weaker-floored gate (Confluence, 1FA) is the higher risk. But rankRisk still weights
-    // org-default 2x (the M8 prior), so GitHub OUTSCORES Confluence. When M16 scores from bands this
-    // pin FLIPS red — update it then to assert the ground-truth ordering (conf.score >= gh.score).
-    const rows = rankRisk(realLiveGraph());
+    // Confluence's Strict-Auth floors single-factor (its 1FA Contractors bypass). Equal reach and no
+    // coverage, so the score gap is PURELY the gate band. Ground truth: the 1FA gate is higher risk.
+    const strength = strengthResolver(realLiveResources());
+    const rows = rankRisk(realLiveGraph(), undefined, strength);
     const gh = rows.find((r) => r.name === "GitHub")!;
     const conf = rows.find((r) => r.name === "Confluence")!;
     expect(gh.reach).toBe(conf.reach); // isolate the gate: equal reach
-    expect(gh.score).toBeGreaterThan(conf.score); // prior mis-ranks TODAY: 4 > 2 (M16 band-aware flips this)
+    expect(conf.score).toBeGreaterThan(gh.score); // M16: 1FA custom (4×) > 2FA org-default (2×)
   });
 });
